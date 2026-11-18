@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/acuntex/takt/blob/main/docs/README.md
+    about: Where the documentation and build notes live.
+  - name: Security report
+    url: https://github.com/acuntex/takt/security/advisories/new
+    about: Report vulnerabilities privately, never in a public issue.

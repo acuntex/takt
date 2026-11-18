@@ -1,0 +1,26 @@
+name: Feature request
+description: Propose a change in behaviour.
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does it solve
+      description: The situation that is awkward today, described before any idea of a solution.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What should it do
+      description: The behaviour you want, and how it should feel on the TV.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and notes
+      description: Workarounds, related issues, or why the obvious approach does not fit.
+    validations:
+      required: false

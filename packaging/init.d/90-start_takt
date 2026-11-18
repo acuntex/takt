@@ -1,0 +1,13 @@
+#!/bin/sh
+#
+# Takt boot entrypoint.
+#
+# Installed as a symlink in /var/lib/webosbrew/init.d/ (like HyperHDR/PicCap) so the
+# webosbrew init system starts the service on boot. Boots the native Luna service by
+# asking the LS2 hub to launch it.
+#
+# This `luna-send` is the single permitted shell LS2 call in the whole project: it runs
+# in the system boot context. The daemon itself never shells out and
+# only talks LS2 over FFI.
+
+luna-send -n 1 "luna://com.github.acuntex.takt.service/start" '{}' &

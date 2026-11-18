@@ -1,0 +1,10 @@
+{
+  "appId": "com.github.acuntex.takt",
+  "type": "regular",
+  "allowedNames": ["com.github.acuntex.takt-*"],
+  "permissions": [
+    { "service": "com.github.acuntex.takt-*", "outbound": ["*"] },
+    { "service": "com.github.acuntex.takt.service", "outbound": ["*"] },
+    { "service": "org.webosbrew.hbchannel.service", "outbound": ["*"] }
+  ]
+}

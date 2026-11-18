@@ -1,0 +1,9 @@
+{
+  "type": "player/state",
+  "payload": {
+    "state": "synchronized",
+    "volume": 42,
+    "muted": false,
+    "future_field": "ignored"
+  }
+}

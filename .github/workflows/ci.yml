@@ -1,0 +1,129 @@
+# Continuous integration for the daemon and the TV UI.
+#
+# The job names `lint`, `test`, `arm`, `web`, `ui`, `format` and `secrets` are the gates a
+# branch protection rule can refer to; renaming one silently drops it from that set.
+#
+# The ARMv7 job cross-links the daemon with zig for glibc 2.24, which is what the TV
+# runs. It is slower than the other jobs because it builds the crate graph twice.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: daemon
+      - name: cargo fmt
+        run: cargo fmt --all -- --check
+        working-directory: daemon
+      - name: cargo clippy
+        run: cargo clippy --all-targets --all-features --locked -- -D warnings
+        working-directory: daemon
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: daemon
+      - name: cargo test
+        run: cargo test --locked
+        working-directory: daemon
+
+  arm:
+    # The build that actually matters for a deploy: ARMv7 against the TV's glibc 2.24.
+    # zigbuild cross-links it on a normal runner, so a broken cross-build fails here
+    # instead of on the maintainer's machine right before an install.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: armv7-unknown-linux-gnueabi
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: daemon
+      - uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.14.1
+      - name: cargo-zigbuild installieren
+        run: cargo install cargo-zigbuild --locked
+      - name: ARMv7-Release-Build (glibc 2.24)
+        run: cargo zigbuild --release --locked --target armv7-unknown-linux-gnueabi.2.24
+        working-directory: daemon
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Syntax der UI-Dateien
+        run: |
+          for file in web/app.js web/visual.js web/progress.js; do node --check "$file"; done
+      - name: Helper-Tests
+        run: |
+          node scripts/test-visual.js
+          node scripts/test-progress.js
+      - name: Skill- und Command-Frontmatter
+        run: node scripts/skills-check.js
+
+  ui:
+    # Headless Chrome drives the served UI through the same assertions a TV run uses.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Headless-UI-Test
+        run: node scripts/tv/ui-test.js
+
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Prettier
+        run: npx --yes prettier@3.9.10 --check .
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks installieren
+        env:
+          GITLEAKS_VERSION: 8.30.1
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C "$RUNNER_TEMP/bin" gitleaks
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Historie scannen
+        run: gitleaks git --redact --verbose --no-banner

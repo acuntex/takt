@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=com.github.acuntex.takt.service
+Exec=/media/developer/apps/usr/palm/services/com.github.acuntex.takt.service/start.sh
+Type=dynamic

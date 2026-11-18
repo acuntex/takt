@@ -1,0 +1,21 @@
+* text=auto eol=lf
+
+*.rs        text diff=rust
+*.toml      text
+*.json      text
+*.json5     text
+*.md        text diff=markdown
+*.html      text
+*.css       text
+*.js        text
+*.sh        text eol=lf
+*.yml       text
+*.yaml      text
+
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.ico       binary
+*.ipk       binary
+*.so        binary
+*.bin       binary

@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Takt</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: #0b0d12;
+        color: #fdf0b9;
+        font-family: Arial, Helvetica, sans-serif;
+      }
+      main {
+        position: absolute;
+        left: 96px;
+        top: 50%;
+        width: 900px;
+        -webkit-transform: translateY(-50%);
+        transform: translateY(-50%);
+      }
+      h1 {
+        margin: 0;
+        font-size: 56px;
+        line-height: 64px;
+        font-weight: 700;
+      }
+      p {
+        margin: 20px 0 0;
+        max-width: 760px;
+        font-size: 28px;
+        line-height: 40px;
+        color: #b6aca3;
+      }
+      #actions {
+        margin-top: 48px;
+      }
+      #actions.hidden {
+        display: none;
+      }
+      button,
+      a {
+        display: inline-block;
+        margin-right: 24px;
+        padding: 18px 36px;
+        border: 2px solid #b835c0;
+        background: #17161c;
+        color: #fdf0b9;
+        font-size: 28px;
+        text-decoration: none;
+      }
+      button:focus,
+      a:focus {
+        outline: none;
+        background: #b835c0;
+        color: #0b0d12;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1 id="title">Starting Takt…</h1>
+      <p id="hint">Setting up the player for Music Assistant.</p>
+      <div id="actions" class="hidden">
+        <button id="reboot" type="button">Reboot now</button>
+        <a id="later" href="http://127.0.0.1:3927/?v=vice43">Later</a>
+      </div>
+    </main>
+    <script>
+      (function () {
+        var target = "http://127.0.0.1:3927/?v=vice43";
+        var setup =
+          "/media/developer/apps/usr/palm/services/com.github.acuntex.takt.service/setup.sh";
+        var finished = false;
+        var polls = 0;
+        var setups = 0;
+
+        function open() {
+          if (finished) {
+            return;
+          }
+          finished = true;
+          window.location.replace(target);
+        }
+
+        function luna(uri, params, callback) {
+          if (!window.PalmServiceBridge) {
+            return false;
+          }
+          var answered = false;
+          var bridge = new PalmServiceBridge();
+          bridge.onservicecallback = function (message) {
+            if (answered) {
+              return;
+            }
+            answered = true;
+            if (callback) {
+              callback(message);
+            }
+          };
+          try {
+            bridge.call(uri, JSON.stringify(params || {}));
+          } catch (error) {
+            if (!answered) {
+              answered = true;
+              if (callback) {
+                callback(null);
+              }
+            }
+          }
+          return true;
+        }
+
+        function showRebootPrompt() {
+          if (finished) {
+            return;
+          }
+          document.getElementById("title").textContent = "Takt needs one restart";
+          document.getElementById("hint").textContent =
+            "The player is not running yet. Reboot the TV once to finish the installation; after " +
+            "that Music Assistant can stream to Takt without opening this app.";
+          document.getElementById("actions").className = "";
+          document.getElementById("reboot").focus();
+          document.getElementById("reboot").onclick = function () {
+            luna("luna://org.webosbrew.hbchannel.service/reboot", {});
+          };
+          document.getElementById("later").onclick = function (event) {
+            event.preventDefault();
+            open();
+          };
+        }
+
+        // Ask the Homebrew Channel to run the setup script. The call is fire-and-forget: on a fresh
+        // install the hub may not have loaded this app's role yet, in which case it never answers,
+        // and polling for the daemon must not depend on that answer.
+        function setup_once() {
+          if (setups >= 3) {
+            return;
+          }
+          setups += 1;
+          luna("luna://org.webosbrew.hbchannel.service/exec", { command: "/bin/sh " + setup });
+        }
+
+        function poll() {
+          if (finished) {
+            return;
+          }
+          var image = new Image();
+          image.onload = function () {
+            open();
+          };
+          image.onerror = function () {
+            polls += 1;
+            if (polls >= 60) {
+              showRebootPrompt();
+              return;
+            }
+            if (polls === 10 || polls === 24) {
+              setup_once();
+            }
+            setTimeout(poll, 500);
+          };
+          image.src = "http://127.0.0.1:3927/ping.png?t=" + new Date().getTime();
+        }
+
+        setup_once();
+        poll();
+      })();
+    </script>
+  </body>
+</html>

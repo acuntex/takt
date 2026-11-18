@@ -1,0 +1,25 @@
+# Rust
+target/
+**/target/
+Cargo.lock.bak
+
+# Build artefacts
+dist/
+*.ipk
+*.deb
+*.tar.gz
+*.tar.xz
+
+# Node/Tooling
+node_modules/
+
+# Local
+.env
+.env.*
+*.local
+/tmp/
+
+# Working notes (designs, plans, ledgers) - never commit
+.work/
+# Lokale Agenten-Konfiguration (enthaelt Host- und Token-Pfade)
+/opencode.jsonc

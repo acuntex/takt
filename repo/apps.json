@@ -1,0 +1,39 @@
+{
+  "paging": {
+    "page": 1,
+    "count": 1,
+    "maxPage": 1,
+    "itemsTotal": 1,
+    "prevUrl": null,
+    "nextUrl": null
+  },
+  "packages": [
+    {
+      "id": "com.github.acuntex.takt",
+      "title": "Takt",
+      "iconUri": "https://raw.githubusercontent.com/acuntex/takt/v0.1.0/docs/assets/icon.png",
+      "manifestUrl": "https://github.com/acuntex/takt/releases/download/v0.1.0/com.github.acuntex.takt.manifest.json",
+      "manifest": {
+        "id": "com.github.acuntex.takt",
+        "version": "0.1.0",
+        "type": "web",
+        "title": "Takt",
+        "appDescription": "A Music Assistant player for rooted LG webOS 4 TVs.",
+        "iconUri": "https://raw.githubusercontent.com/acuntex/takt/v0.1.0/docs/assets/icon.png",
+        "sourceUrl": "https://github.com/acuntex/takt",
+        "rootRequired": true,
+        "ipkUrl": "https://github.com/acuntex/takt/releases/download/v0.1.0/com.github.acuntex.takt_0.1.0_all.ipk",
+        "ipkHash": {
+          "sha256": "4b362119e0d3d197791eda821f6913a504c1cb20791f3b1ff0619d60b0a68408"
+        },
+        "ipkSize": 2123818,
+        "installedSize": 4714697
+      },
+      "pool": "main",
+      "requirements": {
+        "webosRelease": ">=4.0, <5.0"
+      },
+      "shortDescription": "A Music Assistant player for rooted LG webOS 4 TVs."
+    }
+  ]
+}

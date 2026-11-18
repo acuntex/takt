@@ -1,0 +1,10 @@
+{
+  "id": "com.github.acuntex.takt.service",
+  "engine": "native",
+  "executable": "takt",
+  "services": [
+    {
+      "name": "com.github.acuntex.takt.service"
+    }
+  ]
+}

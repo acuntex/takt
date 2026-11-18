@@ -1,0 +1,7 @@
+{
+  "type": "server/activate",
+  "payload": {
+    "activities": [],
+    "active_roles": []
+  }
+}

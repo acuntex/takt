@@ -1,0 +1,8 @@
+{
+  "type": "server/hello",
+  "payload": {
+    "name": "Music Assistant (music-assistant-0)",
+    "languages": ["en", "de"],
+    "future_field": "ignored"
+  }
+}

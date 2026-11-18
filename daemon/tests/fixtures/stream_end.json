@@ -1,0 +1,7 @@
+{
+  "type": "stream/end",
+  "payload": {
+    "roles": ["player"],
+    "future_field": "ignored"
+  }
+}

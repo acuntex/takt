@@ -1,0 +1,18 @@
+{
+  "type": "server/state",
+  "payload": {
+    "metadata": {
+      "timestamp": 1730000000000000,
+      "title": "Bohemian Rhapsody",
+      "artist": "Queen",
+      "album_artist": "Queen",
+      "album": "A Night at the Opera",
+      "artwork_url": "http://198.51.100.20:9000/artwork/abc123",
+      "year": 1975,
+      "track": 11,
+      "progress": { "track_progress": 120000, "track_duration": 355000, "playback_speed": 1000 },
+      "future_field": "ignored"
+    },
+    "future_field": "ignored"
+  }
+}

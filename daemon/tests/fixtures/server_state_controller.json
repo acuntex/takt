@@ -1,0 +1,11 @@
+{
+  "type": "server/state",
+  "payload": {
+    "controller": {
+      "supported_commands": ["play", "pause", "stop", "next", "previous", "volume", "mute"],
+      "volume": 42,
+      "muted": false,
+      "future_field": "ignored"
+    }
+  }
+}

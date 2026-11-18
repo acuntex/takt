@@ -1,0 +1,15 @@
+{
+  "type": "stream/start",
+  "payload": {
+    "server_transmitted": 1730000000000000,
+    "player": {
+      "codec": "flac",
+      "sample_rate": 48000,
+      "channels": 2,
+      "bit_depth": 16,
+      "codec_header": "ZkxhQw=="
+    },
+    "artwork": { "channels": [] },
+    "future_field": "ignored"
+  }
+}

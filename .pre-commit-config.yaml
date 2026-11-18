@@ -1,0 +1,38 @@
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  - repo: local
+    hooks:
+      # The crate lives in daemon/, so both cargo hooks must change directory
+      # first: at the repo root there is no Cargo.toml and `cargo fmt --all`
+      # would just print its usage and fail.
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: bash -c 'cd daemon && cargo fmt --all -- --check'
+        language: system
+        files: \.rs$
+        pass_filenames: false
+
+      - id: cargo-clippy
+        name: cargo clippy
+        entry: bash -c 'cd daemon && cargo clippy --all-targets --all-features -- -D warnings'
+        language: system
+        files: \.rs$
+        pass_filenames: false
+
+      - id: prettier
+        name: prettier
+        entry: pnpm exec prettier --check
+        language: system
+        files: \.(md|json|json5|ya?ml|html|css|js)$
+
+      - id: shellcheck
+        name: shellcheck
+        # Info-level findings stay quiet: SC2016/SC2012 in the TV scripts flag
+        # deliberately single-quoted remote commands and a controlled dist glob.
+        entry: shellcheck --severity=warning
+        language: system
+        files: \.sh$

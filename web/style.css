@@ -1,0 +1,2166 @@
+/* ============================================================================
+   Takt — the "Vice" now-playing stage (1920x1080 canvas, webOS 4 / Chromium 53)
+
+   Geometry is fixed, not fluid: the TV is a 1080p surface read from ~3 m. The
+   whole canvas sits in #viewport, which app.js scales by min(vw/1920, vh/1080)
+   so a 1280x720 panel shows the same frame at two thirds, rail included.
+
+   Colour: ink is the type ground, night is the right field, violet/violet-deep
+   build the night scene, lavender and indigo carry structure, light is the
+   statement type, sand the metadata. Neon is an accent only — it is never a
+   field and the focus ring is fixed to it, never sampled from the artwork.
+   Only the spine's two stops follow the cover hue.
+
+   The reference is the Vice D mock; one deliberate correction: the rail has no
+   floating ink plate. Its transport, bar and remaining-time line live in the
+   ink half of the frame and the bar stops left of the cut edge at every row it
+   occupies, so nothing of the rail ever lands on the artwork.
+
+   Chromium 53 limits honoured: no grid, no flex `gap`, no `inset`, no
+   conic-gradient, no backdrop-filter, no min()/max()/clamp(), no :is(), no
+   masks. Only `transform` and `opacity` animate. One blurred surface.
+   ============================================================================ */
+
+@font-face {
+  font-family: "Anton";
+  src: url("/fonts/anton.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  /* Chrome 53 ignores font-display; the 316 px title frame is what prevents a
+     late font swap from moving anything below it. */
+  font-display: block;
+}
+
+/* ---------- the palette ----------------------------------------------------
+   The ten binding tokens. They are identical in all three palettes, so a
+   cover can no longer change the ground, the type or the focus ring; the
+   palettes differ only in the spine stops (the band that hugs the cut edge).
+   --danger is the one non-decorative colour: it carries "Offline" and nothing
+   else. --ink-rgb and --night-rgb exist because Chromium 53 cannot build
+   rgba() out of a hex custom property. */
+body.palette-leonida,
+body.palette-night,
+body.palette-mono {
+  --ink: #17161c;
+  --night: #060d27;
+  --violet-deep: #350056;
+  --violet: #1e1324;
+  --lavender: #828ec8;
+  --indigo: #415fce;
+  --neon: #b835c0;
+  --danger: #e8544b;
+  --light: #fdf0b9;
+  --sand: #b6aca3;
+  --focus: var(--neon);
+  --ink-rgb: 23, 22, 28;
+  --night-rgb: 6, 13, 39;
+  --sand-rgb: 182, 172, 163;
+  --lavender-rgb: 130, 142, 200;
+  --light-rgb: 253, 240, 185;
+  --sand-rule: rgba(var(--sand-rgb), 0.45);
+  --light-rule: rgba(var(--light-rgb), 0.28);
+}
+
+body.palette-leonida {
+  --spine-a: #350056;
+  --spine-b: #1e1324;
+}
+
+body.palette-night {
+  --spine-a: #14205a;
+  --spine-b: #0b1230;
+}
+
+body.palette-mono {
+  --spine-a: #2f2f36;
+  --spine-b: #1d1d23;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--ink);
+  color: var(--light);
+  font-family: "LG Smart UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The scaling wrapper. app.js writes scale(min(vw/1920, vh/1080)); the origin
+   is the top left corner, so the canvas grows/shrinks from (0, 0) and every
+   child keeps its 1920x1080 coordinates. Being transformed, it is also the
+   containing block for the `position: fixed` settings overlay. */
+.viewport {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1920px;
+  height: 1080px;
+  -webkit-transform: scale(1);
+  transform: scale(1);
+  -webkit-transform-origin: 0 0;
+  transform-origin: 0 0;
+}
+
+.stage {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+  background: var(--ink);
+}
+
+/* ---------- the right field and its ghost ----------------------------------
+   1500 px square, rotated -10deg about its centre. left/top are chosen so the
+   cut edge enters the top edge at x 742 and leaves the bottom edge at x 932.
+   translateZ(0) is identity in 2D: it promotes the field to one composited
+   surface, without which headless Chromium intermittently rasterises the last
+   rows of the layer without its children (a flat band across the frame).
+
+   The field's own colour is night (#060d27), the fixed base surface. Inside it
+   the ghost is the same artwork, blurred once at 40 px, at 45 % over the field.
+   Its image is cropped to the lower right quarter of the sleeve, so no second
+   sun, bar or subject is legible behind the card. It is static — nothing in
+   this layer animates — so the blur is painted once per track and never
+   re-filtered. The card's shadow is the only other blurred paint. */
+.plate {
+  position: absolute;
+  left: 824px;
+  top: -350px;
+  width: 1500px;
+  height: 1500px;
+  overflow: hidden;
+  background: var(--night);
+  -webkit-transform: rotate(-10deg) translateZ(0);
+  transform: rotate(-10deg) translateZ(0);
+  -webkit-transform-origin: 50% 50%;
+  transform-origin: 50% 50%;
+}
+
+.ghost {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1500px;
+  height: 1500px;
+  /* A dark echo, not a lit copy: on a bright sleeve a 0.45 ghost read as a smear
+     at the top right. The field stays night and the seam keeps its step. */
+  opacity: 0.18;
+  -webkit-filter: blur(40px);
+  filter: blur(40px);
+}
+
+.ghost-cover {
+  position: absolute;
+  left: -200%;
+  top: -200%;
+  width: 300%;
+  height: 300%;
+  object-fit: cover;
+  opacity: 0;
+}
+
+/* A bright cover keeps the field night instead of washing it to grey: the
+   ghost drops to a hint, so the cut edge keeps its step. Static; no fade. */
+body.lum-hi .ghost {
+  opacity: 0.08;
+}
+
+/* ---------- the artwork card ----------------------------------------------
+   620 px square at -10deg, the same angle as the seam: its left edge lies on
+   the cut edge (top-left corner 782,227; bottom-left 889,838 — both on the
+   seam). One printed plane, no near-parallel second edge. The cover is 1:1, so
+   it is never cropped. The frame carries the hairline and the soft shadow; the
+   art inside it is the only layer that scales (playing) or orbits (idle). */
+.card {
+  position: absolute;
+  left: 831px;
+  top: 169px;
+  width: 620px;
+  height: 620px;
+  border: 1px solid rgba(var(--light-rgb), 0.4);
+  box-shadow: -40px 16px 40px rgba(var(--ink-rgb), 0.9);
+  -webkit-transform: rotate(-10deg);
+  transform: rotate(-10deg);
+  -webkit-transform-origin: 50% 50%;
+  transform-origin: 50% 50%;
+}
+
+.card-frame {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.art {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--violet);
+  /* The breathe settles on pause instead of snapping to rest: 240 ms back down
+     to the printed size. While playing and not idle the same property is
+     written at 20 Hz, so the transition is off there and every write lands in
+     its own frame. */
+  -webkit-transition: -webkit-transform 240ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: transform 240ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* Play: one 200 ms window, set for the frame playback starts, in which the
+   20 Hz writes are eased into the breathe instead of stepping to it. The
+   class is dropped after 200 ms, so the tick owns the property again. */
+body.is-sleeve-ease .art {
+  -webkit-transition: -webkit-transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* Idle keeps the breathe now: the burn-in screen is where a still, bright card
+   would sit for an hour, so the music has to keep moving it. That makes the
+   20 Hz writes the only motion again, which is why the transition is off in
+   idle too — a 240 ms transition restarted 20 times a second runs forever and
+   repaints the stage. */
+body.state-playing:not(.is-sleeve-ease) .art {
+  -webkit-transition: none;
+  transition: none;
+}
+
+/* The drawn sleeve is the fallback when a track has no readable cover: a night
+   scene, violet sky over a low indigo glow. No sun disc, no horizon rule, no
+   sea — the composition has no subject that the ghost could repeat. The
+   markup is percentage-based, so it fills the 1500 px ghost and the 620 px
+   card alike. */
+.art-scene {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.a-sky {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(180deg, #141033 0%, var(--violet) 26%, var(--violet-deep) 78%);
+}
+
+.a-glow {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(
+    ellipse at 50% 88%,
+    rgba(65, 95, 206, 0.55) 0%,
+    rgba(65, 95, 206, 0.18) 34%,
+    rgba(65, 95, 206, 0) 62%
+  );
+}
+
+.a-foot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 18%;
+  background: rgba(var(--ink-rgb), 0.55);
+}
+
+/* A real cover replaces the drawn sleeve; the scene stays behind it, hidden. */
+.cover {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+}
+
+body.has-cover .cover,
+body.has-cover .ghost-cover {
+  opacity: 1;
+}
+
+body.has-cover .art-scene {
+  display: none;
+}
+
+/* Idle grade: a 15.2 % white lift over the sleeve. Idle loses the type block
+   and would otherwise sit below the 10-15 % frame-luma band; the field keeps
+   its depth, so the cut edge keeps its step. */
+/* The spine: a flat-value band hugging the cut edge. Opaque for its first
+   253 px, then a ramp into the artwork, so a crossing title line starts on a
+   known dark value. Only these two stops follow the cover hue. */
+.spine {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 460px;
+  box-shadow: inset 2px 0 0 rgba(var(--lavender-rgb), 0.45);
+  background: linear-gradient(
+    90deg,
+    var(--spine-a) 0%,
+    var(--spine-b) 55%,
+    rgba(var(--night-rgb), 0) 100%
+  );
+}
+
+/* Burn-in orbit: the whole card drifts on a 3 px circle over 60 s, so the
+   hairline and the shadow move with it. The ghost never animates. The rotation
+   is part of the keyframe because the card sits at -10deg. */
+@-webkit-keyframes card-orbit {
+  0% {
+    -webkit-transform: translate(-3px, 0) rotate(-10deg);
+  }
+  25% {
+    -webkit-transform: translate(0, -3px) rotate(-10deg);
+  }
+  50% {
+    -webkit-transform: translate(3px, 0) rotate(-10deg);
+  }
+  75% {
+    -webkit-transform: translate(0, 3px) rotate(-10deg);
+  }
+  100% {
+    -webkit-transform: translate(-3px, 0) rotate(-10deg);
+  }
+}
+
+@keyframes card-orbit {
+  0% {
+    transform: translate(-3px, 0) rotate(-10deg);
+  }
+  25% {
+    transform: translate(0, -3px) rotate(-10deg);
+  }
+  50% {
+    transform: translate(3px, 0) rotate(-10deg);
+  }
+  75% {
+    transform: translate(0, 3px) rotate(-10deg);
+  }
+  100% {
+    transform: translate(-3px, 0) rotate(-10deg);
+  }
+}
+
+/* The orbit steps instead of gliding: this renderer repaints the stage for every
+   frame of a continuous transform animation, which measured 50 of 60 fps. Six
+   steps per quarter of the 60 s circle move the card 3 px every 2.5 s — the
+   drift still protects the panel, and the idle screen runs at a full 60 fps. */
+body.is-idle .card {
+  -webkit-animation: card-orbit 60s steps(6, end) infinite;
+  animation: card-orbit 60s steps(6, end) infinite;
+}
+
+/* The track-change settle. The sleeve lands 3.5 % large and comes down to its
+   printed size in 260 ms, so the new artwork arrives instead of appearing. The
+   rotation is inside the keyframe because the card carries -10deg; nothing is
+   re-filtered — the card (hairline, cover and its one blurred shadow) is one
+   layer that is only scaled on the compositor for those 260 ms.
+
+   Idle is excluded on purpose: there the orbit owns the card, and a track
+   change in idle must not start a second transform on it (burn-in rule). */
+@-webkit-keyframes card-settle {
+  from {
+    -webkit-transform: rotate(-10deg) scale(1.035);
+  }
+  to {
+    -webkit-transform: rotate(-10deg) scale(1);
+  }
+}
+
+@keyframes card-settle {
+  from {
+    transform: rotate(-10deg) scale(1.035);
+  }
+  to {
+    transform: rotate(-10deg) scale(1);
+  }
+}
+
+body.is-track:not(.is-idle) .card {
+  -webkit-animation: card-settle 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: card-settle 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* ---------- top bar -------------------------------------------------------
+   Inside the 5 % safe area: 96 px from the left, 54 px from the top, 56 px
+   tall. The wordmark and the room on the left, one labelled control on the
+   right; the corner is empty. Both entries are sand at 26 px and neither has a
+   box at rest — the bar is quiet until the focus ring lands. The ring is the
+   rail's (2 px ink, then 8 px neon), so the remote has one focus signal on the
+   whole screen. */
+.topbar {
+  position: absolute;
+  left: 96px;
+  top: 54px;
+  width: 1728px;
+  height: 56px;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  -webkit-transition: opacity 400ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: opacity 400ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* The wordmark keeps the credits hook but no longer takes a d-pad stop: the
+   bar carries exactly one control. */
+.brand {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: baseline;
+  align-items: baseline;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.brand-name {
+  font-family: "Anton", Impact, "Arial Narrow", sans-serif;
+  font-size: 26px;
+  line-height: 56px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sand);
+}
+
+.brand:hover .brand-name {
+  color: var(--light);
+}
+
+.room-sep {
+  padding: 0 12px;
+  font-style: normal;
+  font-size: 26px;
+  line-height: 56px;
+  color: var(--sand-rule);
+}
+
+.room {
+  overflow: hidden;
+  max-width: 720px;
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 56px;
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  color: var(--sand);
+}
+
+.settings-toggle {
+  padding: 0 16px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--sand);
+  font: inherit;
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 56px;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.settings-toggle:hover,
+.settings-toggle:focus {
+  color: var(--light);
+}
+
+.settings-toggle:focus {
+  box-shadow:
+    0 0 0 2px var(--ink),
+    0 0 0 8px var(--focus);
+}
+
+/* ---------- type block ----------------------------------------------------
+   The content column keeps its padding; the state block, the title and the
+   metadata share one left edge. The title overflows the column to the right and
+   is masked by its own glyph halo, so it has no bed and needs no measurement. */
+.content {
+  position: absolute;
+  left: 56px;
+  top: 144px;
+  width: 1080px;
+  padding: 32px 40px;
+  /* One gesture in and out of idle: the type block fades over 400 ms and drifts
+     12 px up on the way out, back down on the way in, so the stage settles
+     instead of merely fading. Both properties ride the same composited layer the
+     opacity fade already needs — no new paint per frame. */
+  -webkit-transform: translateY(0);
+  transform: translateY(0);
+  -webkit-transition:
+    opacity 400ms cubic-bezier(0.23, 1, 0.32, 1),
+    -webkit-transform 400ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition:
+    opacity 400ms cubic-bezier(0.23, 1, 0.32, 1),
+    transform 400ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+body.is-idle .content {
+  -webkit-transform: translateY(-12px);
+  transform: translateY(-12px);
+}
+
+/* ---------- the state block ------------------------------------------------
+   The one thing the screen must answer at 3 m: is it playing. An icon and a
+   36 px word in the slot the 26 px state word had, on the same left edge as the
+   title, so the eye reads the state before the statement.
+
+   Each state owns its mark, so a play triangle only ever means Playing. The
+   connecting dots are the only loop in this block: three 8 px dots on a 1.2 s
+   transform bob, only while the state is connecting. No filter, no shadow. */
+.state {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  height: 44px;
+  margin-bottom: 30px;
+  color: var(--sand);
+}
+
+.state-mark {
+  position: relative;
+  -webkit-flex: 0 0 40px;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  margin-right: 14px;
+  color: var(--sand);
+}
+
+.state-mark svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: none;
+  width: 40px;
+  height: 40px;
+  fill: currentColor;
+}
+
+.state-word {
+  font-size: 36px;
+  font-weight: 700;
+  line-height: 44px;
+  letter-spacing: 0.01em;
+  color: var(--sand);
+}
+
+body.state-playing .m-play {
+  display: block;
+}
+
+body.state-playing .state-word {
+  color: var(--light);
+}
+
+body.state-playing .state-mark {
+  color: var(--neon);
+}
+
+body.state-paused .m-pause {
+  display: block;
+}
+
+body.state-ready .m-dot,
+body.state-offline .m-dot {
+  display: block;
+}
+
+body.state-offline .state-word,
+body.state-offline .state-mark {
+  color: var(--danger);
+}
+
+.m-connecting {
+  position: absolute;
+  left: 3px;
+  top: 50%;
+  display: none;
+  width: 34px;
+  height: 8px;
+  margin-top: -4px;
+}
+
+body.state-connecting .m-connecting {
+  display: block;
+}
+
+.m-connecting i {
+  position: absolute;
+  top: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--sand);
+}
+
+body.state-connecting .m-connecting i {
+  -webkit-animation: dot-bob 1.2s ease-in-out infinite;
+  animation: dot-bob 1.2s ease-in-out infinite;
+}
+
+.m-connecting i:nth-child(1) {
+  left: 0;
+}
+
+.m-connecting i:nth-child(2) {
+  left: 13px;
+  -webkit-animation-delay: 160ms;
+  animation-delay: 160ms;
+}
+
+.m-connecting i:nth-child(3) {
+  left: 26px;
+  -webkit-animation-delay: 320ms;
+  animation-delay: 320ms;
+}
+
+@-webkit-keyframes dot-bob {
+  0%,
+  60%,
+  100% {
+    -webkit-transform: translateY(0);
+  }
+  30% {
+    -webkit-transform: translateY(-6px);
+  }
+}
+
+@keyframes dot-bob {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-6px);
+  }
+}
+
+/* Offline is the only place the danger colour appears; Ready borrows the same
+   dot in sand. */
+.m-dot {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  display: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* The statement. A fixed 316 px frame (two 158 px lines) pins the artist, the
+   album and the rail, and the pair is centred in it at any size. The title's
+   two lines are staggered by 3.0986 em; line 2 may cross the cut edge.
+
+   The crossing line is masked by the letters themselves, not by a rectangle: a
+   glyph-following ink halo of 13 flat shadows — 2 px in eight directions, 3 px
+   on the four axes, and one 10 px wash at 28 % that fades the halo into the
+   artwork instead of cutting it off. No blur, so it is flat paint rastered with
+   the line; measured 15.4:1 on a white cover.
+
+   The frame does not clip — each line clips its own box, and the frame's
+   height, not its overflow, is what pins the layout. A clip here would sit
+   12 px below the deepest descender at the design size, and the 10 px rise
+   spends almost all of that. */
+.title {
+  margin-top: 0;
+  height: 316px;
+  width: 1728px;
+  font-family: "Anton", Impact, "Arial Narrow", sans-serif;
+  font-weight: 400;
+  font-size: 158px;
+  line-height: 158px;
+  letter-spacing: 0.002em;
+  text-transform: uppercase;
+  color: var(--light);
+  text-shadow:
+    2px 0 0 var(--ink),
+    -2px 0 0 var(--ink),
+    0 2px 0 var(--ink),
+    0 -2px 0 var(--ink),
+    2px 2px 0 var(--ink),
+    -2px 2px 0 var(--ink),
+    2px -2px 0 var(--ink),
+    -2px -2px 0 var(--ink),
+    3px 0 0 var(--ink),
+    -3px 0 0 var(--ink),
+    0 3px 0 var(--ink),
+    0 -3px 0 var(--ink),
+    10px 0 0 rgba(var(--ink-rgb), 0.28);
+}
+
+/* Text-overflow needs the clip on the line box itself. A word that still does
+   not fit at the 96 px floor ends in an ellipsis, never in an unmarked cut. */
+.title span {
+  display: block;
+  overflow: hidden;
+  line-height: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 3.0986 em is the 440 px stagger at 142 px; it shrinks with the type, so the
+   diagonal keeps its angle instead of drifting right. */
+.title .t2 {
+  margin-left: 3.0986em;
+}
+
+/* One metadata voice: the artist leads at 42 px in the warm light, then the
+   album at 28 px in sand at 70 %, with no rule, no box and no indent — both on
+   the title's left edge. The album is the quieter half of one sentence, not a
+   second label. */
+.artist {
+  margin-top: 44px;
+  overflow: hidden;
+  font-size: 42px;
+  line-height: 54px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--light);
+}
+
+.album {
+  max-width: 760px;
+  margin-top: 14px;
+  overflow: hidden;
+  font-size: 28px;
+  line-height: 38px;
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(var(--sand-rgb), 0.7);
+}
+
+/* ---------- the track change ----------------------------------------------
+   The one orchestrated moment in the stage: the sleeve has just been committed
+   (has-cover, the spine stops and lum-hi in that frame) and the type enters with
+   it. Each line rises out of its own box — 10 px for the two title lines at a
+   70 ms stagger, 8 px for the artist and the album behind them — while the card
+   settles. Every move is `transform` or `opacity` on a finite animation; the
+   20 Hz tick never touches these elements.
+
+   `is-track` is set once per track change and removed after the longest of the
+   four animations has ended. `both` keeps the last frame while the class is on
+   and the class removal lands on the same values, so nothing jumps. */
+@-webkit-keyframes line-rise {
+  from {
+    opacity: 0;
+    -webkit-transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    -webkit-transform: translateY(0);
+  }
+}
+
+@keyframes line-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@-webkit-keyframes meta-rise {
+  from {
+    opacity: 0;
+    -webkit-transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    -webkit-transform: translateY(0);
+  }
+}
+
+@keyframes meta-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+body.is-track .title .t1 {
+  -webkit-animation: line-rise 320ms ease-out both;
+  animation: line-rise 320ms ease-out both;
+}
+
+body.is-track .title .t2 {
+  -webkit-animation: line-rise 320ms ease-out 70ms both;
+  animation: line-rise 320ms ease-out 70ms both;
+}
+
+body.is-track .artist {
+  -webkit-animation: meta-rise 320ms ease-out 140ms both;
+  animation: meta-rise 320ms ease-out 140ms both;
+}
+
+body.is-track .album {
+  -webkit-animation: meta-rise 320ms ease-out 180ms both;
+  animation: meta-rise 320ms ease-out 180ms both;
+}
+
+/* ---------- rail ----------------------------------------------------------
+   Inside the ink half, not on a floating plate. The ink box is
+   x 96..880, y 836..952; the cut edge is at x 889 on the rail's top row, so
+   the whole rail sits on ink at every row it occupies.
+
+   One baseline, y 952: button ink, ledger baseline, volume baseline. The bar
+   is the one element above it, centred on the transport's centre line 894. */
+.rail {
+  position: absolute;
+  left: 96px;
+  top: 836px;
+  width: 784px;
+  height: 116px;
+}
+
+.btn {
+  position: absolute;
+  display: block;
+  padding: 0;
+  border: 2px solid rgba(var(--sand-rgb), 0.8);
+  outline: none;
+  background: transparent;
+  color: var(--light);
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  opacity: 1;
+  -webkit-transition:
+    opacity 400ms cubic-bezier(0.23, 1, 0.32, 1),
+    -webkit-transform 160ms ease-out;
+  transition:
+    opacity 400ms cubic-bezier(0.23, 1, 0.32, 1),
+    transform 160ms ease-out;
+}
+
+/* A press is acknowledged before the daemon answers: 3 % on the compositor,
+   back over the same 160 ms. */
+.btn:active {
+  -webkit-transform: scale(0.97);
+  transform: scale(0.97);
+}
+
+.btn svg {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 34px;
+  height: 34px;
+  margin: -17px 0 0 -17px;
+  fill: currentColor;
+}
+
+.t-prev {
+  left: 0;
+  top: 28px;
+  width: 88px;
+  height: 88px;
+}
+
+.t-next {
+  left: 276px;
+  top: 28px;
+  width: 88px;
+  height: 88px;
+}
+
+.t-play {
+  left: 124px;
+  top: 0;
+  width: 116px;
+  height: 116px;
+  border-width: 3px;
+}
+
+.t-play svg {
+  width: 46px;
+  height: 46px;
+  margin: -23px 0 0 -23px;
+}
+
+/* Inverted focus: the focused control is the only light-filled block on the
+   rail. 3 px ink then 5 px neon; both are solid rings, so no blur is paid. */
+.btn:focus {
+  background: var(--light);
+  border-color: var(--light);
+  box-shadow:
+    0 0 0 3px var(--ink),
+    0 0 0 8px var(--focus);
+  color: var(--ink);
+}
+
+/* PLAYING shows pause bars, everything else a play triangle. */
+.g-pause {
+  display: none;
+}
+
+.t-play.is-playing .g-pause {
+  display: block;
+}
+
+.t-play.is-playing .g-play {
+  display: none;
+}
+
+/* Not live — connecting, offline, or a stage without a session: the transport
+   and the bar drop to 40 % and stop taking input. The inert play button carries
+   no glyph at all, because a play triangle would promise a press that cannot
+   happen. `pointer-events: none` is also what keeps these controls out of the
+   d-pad (`focusableElements` skips them). A bar that already holds the ring is
+   the exception: the ring stays at full strength and only the track, the fill,
+   the cursor and the caption dim, so the remote's place is still readable
+   during a reconnect. */
+body.state-connecting .rail .btn,
+body.state-offline .rail .btn,
+body.state-ready .rail .btn,
+body.state-connecting .prog,
+body.state-offline .prog,
+body.state-ready .prog {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+body.bar-focused.state-connecting .prog,
+body.bar-focused.state-offline .prog,
+body.bar-focused.state-ready .prog {
+  opacity: 1;
+}
+
+body.bar-focused.state-connecting .bar,
+body.bar-focused.state-offline .bar,
+body.bar-focused.state-ready .bar {
+  background: rgba(var(--sand-rgb), 0.2);
+}
+
+body.bar-focused.state-connecting .fill,
+body.bar-focused.state-connecting .cursor,
+body.bar-focused.state-connecting .ledger,
+body.bar-focused.state-offline .fill,
+body.bar-focused.state-offline .cursor,
+body.bar-focused.state-offline .ledger,
+body.bar-focused.state-ready .fill,
+body.bar-focused.state-ready .cursor,
+body.bar-focused.state-ready .ledger {
+  opacity: 0.4;
+}
+
+body.state-connecting .t-play svg,
+body.state-offline .t-play svg,
+body.state-ready .t-play svg {
+  display: none;
+}
+
+.prog {
+  position: absolute;
+  left: 400px;
+  top: 48px;
+  width: 344px;
+  -webkit-transition: opacity 400ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: opacity 400ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* The bar body is 20 px, from x 496 to 840: the left edge stays where it was,
+   the right end leaves ~50 px of ink before the seam, and the centreline sits
+   on the pause button's 894. The focus ring is the transport's (2 px ink, then
+   8 px neon), drawn as one static box-shadow outside the body — a ring, not a
+   border, so the track does not grow. No transition on it: the ring lands with
+   the focus. */
+.bar {
+  position: relative;
+  height: 20px;
+  overflow: hidden;
+  outline: none;
+  background: rgba(var(--sand-rgb), 0.5);
+}
+
+.bar:focus {
+  /* The second signal is the track itself brightening, capped at 60 %: at 80 %
+     the empty track outshone the fill. Sand at 50 % at rest, 60 % focused. */
+  background: rgba(var(--sand-rgb), 0.6);
+  box-shadow:
+    0 0 0 2px var(--ink),
+    0 0 0 8px var(--focus);
+}
+
+/* The played part is a fixed indigo -> lavender ramp over the whole track: the
+   gradient inside the scaled fill is given the full-track end colour by app.js,
+   so a given second always wears the same colour, however much of the track is
+   played. The neon is the focus ring and nothing else. */
+.fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 20px;
+  background: linear-gradient(90deg, var(--indigo) 0%, var(--lavender) 100%);
+  -webkit-transform: scaleX(0);
+  transform: scaleX(0);
+  -webkit-transform-origin: 0 50%;
+  transform-origin: 0 50%;
+  /* No transition on purpose. A 250 ms transition restarted by every tick runs
+     continuously, and on this renderer that repaints the stage every frame: it
+     cost 10 of 60 fps. The tick moves the edge by well under a pixel (344 px
+     over a whole track), so the steps are not visible and the fill is cheap. */
+}
+
+/* The playhead: a 3 px cream square, the body's full height, sitting on the
+   fill's leading edge with no overhang at either end and no shadow. It is what
+   answers a press — app.js moves only this on a step, while the fill waits for
+   the daemon's confirming status. Transform only, no transition. */
+.cursor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 3px;
+  height: 20px;
+  background: var(--light);
+  -webkit-transform: translateX(0);
+  transform: translateX(0);
+  pointer-events: none;
+}
+
+.ledger {
+  height: 34px;
+  /* The body grew 4 px; the caption keeps the line it had (top 926). */
+  margin-top: 22px;
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 34px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: var(--sand);
+  -webkit-transition: opacity 200ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: opacity 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* Focused, the one caption line splits without new elements: the elapsed time
+   on the left end and the remaining time right-aligned under the bar's right
+   end (x 840). Blur returns the single "x left" caption to x 496. */
+body.bar-focused .ledger {
+  display: flex;
+  justify-content: space-between;
+}
+
+.ledger b {
+  font-weight: 700;
+  color: var(--light);
+}
+
+.ledger i {
+  padding: 0 10px;
+  font-style: normal;
+  color: var(--sand);
+}
+
+/* The volume readout: the numeral alone, right-aligned to the rail's ink edge,
+   its baseline on 952. It appears for ~1.5 s after a volume key and takes the
+   ledger's place for that moment. */
+.vol {
+  position: absolute;
+  right: 0;
+  top: 72px;
+  width: 200px;
+  height: 52px;
+  font-family: "Anton", Impact, "Arial Narrow", sans-serif;
+  font-size: 42px;
+  line-height: 52px;
+  letter-spacing: 0.02em;
+  text-align: right;
+  color: var(--light);
+  opacity: 0;
+  /* The same 200 ms as the ledger it replaces: one crossfade, no overlap at two
+     different durations. */
+  -webkit-transition: opacity 200ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: opacity 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+body.show-volume .vol {
+  opacity: 1;
+}
+
+body.show-volume .ledger {
+  opacity: 0;
+}
+
+/* ---------- spectrum band -------------------------------------------------
+   Three thin bars in the empty lower-left of the ink field, below the
+   transport baseline (y 952): 4 px high, 10 px apart, 300/220/150 px wide,
+   growing from their left edge. Bass wears the neon accent, mid lavender,
+   treble sand — the palette's own hierarchy, nothing new. The tick writes each
+   scaleX at 20 Hz with no transition; only the group's opacity fades, once per
+   state change, and the tick never touches it. A bar at the 5 % floor is a
+   visible sliver, so silence still reads as a band. The widest bar ends at
+   x 396, well inside the cut edge (x 921 at y 1020). */
+.band {
+  position: absolute;
+  left: 96px;
+  top: 988px;
+  width: 300px;
+  height: 32px;
+  opacity: 0;
+  pointer-events: none;
+  -webkit-transition: opacity 400ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: opacity 400ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* Playing and loaded: the band joins the chrome. Idle keeps it at half strength,
+   because the screen without transport has to show that something is still
+   playing; pause and the empty screen fade it out and the bars rest at the
+   floor. */
+body.state-playing:not(.is-empty) .band {
+  opacity: 1;
+}
+
+body.state-playing.is-idle:not(.is-empty) .band {
+  opacity: 0.5;
+}
+
+.band-bar {
+  position: absolute;
+  left: 0;
+  height: 4px;
+  -webkit-transform: scaleX(0.05);
+  transform: scaleX(0.05);
+  -webkit-transform-origin: 0 50%;
+  transform-origin: 0 50%;
+}
+
+.band-bass {
+  top: 0;
+  width: 300px;
+  background: var(--neon);
+}
+
+.band-mid {
+  top: 14px;
+  width: 220px;
+  background: var(--lavender);
+}
+
+.band-treble {
+  top: 28px;
+  width: 150px;
+  background: var(--sand);
+}
+
+/* ---------- idle ----------------------------------------------------------
+   The idle statement sits on the upper third (y 300), where the type block and
+   the rail leave the field quiet: a sand state word, a 60 px Anton line and
+   the artist at 34 px. The controls, the bar and the metadata line drop; the
+   wordmark stays at 38 %. */
+.idle {
+  position: absolute;
+  left: 96px;
+  top: 300px;
+  width: 760px;
+  opacity: 0;
+  pointer-events: none;
+  -webkit-transition: opacity 400ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: opacity 400ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.idle-state {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 26px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sand);
+}
+
+.idle-text {
+  width: 760px;
+  margin-top: 10px;
+  overflow: hidden;
+  font-family: "Anton", Impact, "Arial Narrow", sans-serif;
+  font-size: 60px;
+  line-height: 72px;
+  letter-spacing: 0.01em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--light);
+}
+
+.idle-mark {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 22px;
+  vertical-align: 14px;
+  background: var(--neon);
+}
+
+.idle-artist {
+  width: 760px;
+  margin-top: 14px;
+  overflow: hidden;
+  font-size: 34px;
+  line-height: 44px;
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--sand);
+}
+
+/* Progress on the idle screen: the one thing the transport used to answer that
+   is still worth answering when the chrome is gone. A 3 px line with the rail's
+   indigo -> lavender ramp and its own 3 px cream cursor on the leading edge,
+   plus the same "left" wording the ledger uses. */
+.idle-progress {
+  /* 700, not the 760 of the type block: at this height the seam is at x ~830,
+     so a 760 px line ends 26 px inside the artwork. */
+  width: 700px;
+  margin-top: 30px;
+}
+
+.idle-bar {
+  position: relative;
+  height: 3px;
+  background: rgba(var(--sand-rgb), 0.3);
+}
+
+.idle-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(90deg, var(--indigo) 0%, var(--lavender) 100%);
+  -webkit-transform: scaleX(0);
+  transform: scaleX(0);
+  -webkit-transform-origin: 0 50%;
+  transform-origin: 0 50%;
+}
+
+.idle-cursor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 3px;
+  height: 3px;
+  background: var(--light);
+  -webkit-transform: translateX(0);
+  transform: translateX(0);
+}
+
+.idle-left {
+  display: block;
+  margin-top: 12px;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 30px;
+  letter-spacing: 0.02em;
+  color: var(--sand);
+}
+
+/* ---------- idle state ---------------------------------------------------- */
+body.is-idle .content,
+body.is-idle .t-prev,
+body.is-idle .t-play,
+body.is-idle .t-next,
+body.is-idle .prog,
+body.is-idle .vol,
+body.is-idle .message,
+body.is-idle .settings-toggle {
+  opacity: 0;
+  pointer-events: none;
+}
+
+body.is-idle .topbar {
+  opacity: 0.38;
+}
+
+/* Nothing bright and static in one place: the burn-in line takes the same 3 px
+   circle the card carries, so the 60 px title is not a still target either. */
+body.is-idle .idle {
+  opacity: 1;
+  -webkit-animation: empty-orbit 60s steps(6, end) infinite;
+  animation: empty-orbit 60s steps(6, end) infinite;
+}
+
+/* ---------- the empty screen ----------------------------------------------
+   Nothing is loaded: no drawn sleeve dressed as a cover and no 158 px "Takt"
+   standing in for a track. One 32 px statement, the way out, and who this
+   player is — on the upper third, where the type block and the rail leave the
+   field quiet. The wordmark stays once, in the top bar. In idle the block takes
+   the burn-in orbit the card would have carried. */
+.empty {
+  position: absolute;
+  left: 96px;
+  top: 300px;
+  width: 780px;
+  opacity: 0;
+  pointer-events: none;
+  -webkit-transition: opacity 400ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: opacity 400ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+body.is-empty .empty {
+  opacity: 1;
+}
+
+.empty-mark {
+  display: block;
+  width: 86px;
+  height: 72px;
+  margin-bottom: 30px;
+  color: var(--light);
+}
+
+/* The one neon element of the mark; the T itself takes the surrounding colour. */
+.empty-mark .takt-playhead,
+.credits-logo-mark .takt-playhead {
+  fill: var(--neon);
+}
+
+.empty-title {
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 44px;
+  letter-spacing: 0.01em;
+  color: var(--light);
+}
+
+.empty-hint {
+  margin-top: 8px;
+  font-size: 28px;
+  line-height: 40px;
+  letter-spacing: 0.01em;
+  color: var(--sand);
+}
+
+.empty-id {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  margin-top: 30px;
+  font-size: 24px;
+  line-height: 32px;
+  letter-spacing: 0.02em;
+  color: var(--sand);
+}
+
+.empty-dot {
+  width: 12px;
+  height: 12px;
+  margin-right: 14px;
+  border-radius: 50%;
+  background: var(--sand);
+}
+
+.empty-dot.is-live {
+  background: var(--neon);
+}
+
+.empty-name {
+  font-weight: 600;
+}
+
+.empty-sep {
+  padding: 0 10px;
+  font-style: normal;
+  color: var(--sand-rule);
+}
+
+@-webkit-keyframes empty-orbit {
+  0% {
+    -webkit-transform: translate(-3px, 0);
+  }
+  25% {
+    -webkit-transform: translate(0, -3px);
+  }
+  50% {
+    -webkit-transform: translate(3px, 0);
+  }
+  75% {
+    -webkit-transform: translate(0, 3px);
+  }
+  100% {
+    -webkit-transform: translate(-3px, 0);
+  }
+}
+
+@keyframes empty-orbit {
+  0% {
+    transform: translate(-3px, 0);
+  }
+  25% {
+    transform: translate(0, -3px);
+  }
+  50% {
+    transform: translate(3px, 0);
+  }
+  75% {
+    transform: translate(0, 3px);
+  }
+  100% {
+    transform: translate(-3px, 0);
+  }
+}
+
+/* ---------- empty state --------------------------------------------------- */
+/* No fake cover: the card would show the drawn sleeve, which is exactly the lie
+   an empty screen must not tell. The plate keeps the field, the seam and the
+   spine, so the stage still has its architecture. */
+body.is-empty .card {
+  display: none;
+}
+
+body.is-empty .content {
+  opacity: 0;
+  pointer-events: none;
+  -webkit-transform: translateY(-12px);
+  transform: translateY(-12px);
+}
+
+body.is-empty .rail,
+body.is-empty .message,
+body.is-empty .vol {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The burn-in line repeats what is playing; with nothing loaded it would print
+   the wordmark a second time. */
+body.is-empty .idle {
+  display: none;
+}
+
+/* Nothing bright and static in one place: the block that remains takes the
+   3 px burn-in circle the card carries when a track is loaded. */
+body.is-empty.is-idle .empty {
+  -webkit-animation: empty-orbit 60s steps(6, end) infinite;
+  animation: empty-orbit 60s steps(6, end) infinite;
+}
+
+.message {
+  position: absolute;
+  left: 96px;
+  top: 740px;
+  width: 700px;
+  font-size: 20px;
+  line-height: 28px;
+  color: var(--sand);
+  -webkit-transition: opacity 400ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: opacity 400ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* ---------- settings surface ---------------------------------------------
+   A left-aligned stage, not a drawer: 1000 px wide, full height, read from
+   3 m. Every row is a label (30 px), a value (40-52 px) and one 28 px note;
+   every target is at least 64 px. The panel keeps the old slide (64 px,
+   200 ms, ease-out) and the scrim fade; only transform and opacity animate. */
+.settings-backdrop {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 20;
+  background: rgba(var(--ink-rgb), 0.86);
+  -webkit-animation: fade-in 180ms ease-out;
+  animation: fade-in 180ms ease-out;
+}
+
+.settings-panel {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 30;
+  display: flex;
+  width: 1000px;
+  max-width: 100vw;
+  flex-direction: column;
+  padding: 54px 96px;
+  overflow-y: auto;
+  border-right: 2px solid var(--sand-rule);
+  background: var(--ink);
+  box-shadow: 24px 0 60px rgba(0, 0, 0, 0.55);
+  /* The arrival is a real slide, not a nudge: 64 px + 200 ms, eased out, with
+     the scrim fading underneath it. Only transform animates here; the panel is
+     opaque from the first frame, so nothing flickers through it. */
+  will-change: transform;
+  -webkit-animation: panel-in 200ms ease-out;
+  animation: panel-in 200ms ease-out;
+}
+
+/* Closing mirrors the opening: the scrim fades over its 180 ms and the panel
+   retracts over its 200 ms; app.js sets `hidden` when the longer one ends. */
+.settings-backdrop.is-closing {
+  -webkit-animation: fade-out 180ms ease-out;
+  animation: fade-out 180ms ease-out;
+}
+
+.settings-panel.is-closing {
+  -webkit-animation: panel-out 200ms ease-out;
+  animation: panel-out 200ms ease-out;
+}
+
+.settings-heading {
+  display: flex;
+  flex-shrink: 0;
+  height: 64px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.settings-heading h2 {
+  font-family: "Anton", Impact, "Arial Narrow", sans-serif;
+  font-size: 40px;
+  font-weight: 400;
+  line-height: 64px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--light);
+}
+
+.settings-close {
+  display: flex;
+  width: 64px;
+  height: 64px;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--sand-rule);
+  outline: none;
+  background: transparent;
+  color: var(--sand);
+  cursor: pointer;
+}
+
+.settings-close:hover {
+  border-color: var(--sand);
+}
+
+.settings-close svg {
+  width: 28px;
+  height: 28px;
+  fill: currentColor;
+}
+
+.settings-close:focus,
+.saction:focus,
+.settings-done:focus,
+.name-input:focus,
+.pin-input:focus {
+  border-color: var(--focus);
+  box-shadow:
+    0 0 0 2px var(--ink),
+    0 0 0 8px var(--focus);
+}
+
+body.settings-open .settings-toggle {
+  display: none;
+}
+
+.settings-rows {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+/* One row per decision. The rule above a row is the only divider: no boxes
+   inside boxes at TV distance. */
+.srow {
+  display: flex;
+  flex-shrink: 0;
+  min-height: 116px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 0;
+  border-top: 2px solid rgba(var(--sand-rgb), 0.22);
+}
+
+.srow-main {
+  min-width: 0;
+  flex: 1 1 auto;
+  padding-right: 24px;
+}
+
+.srow-label {
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 40px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sand);
+}
+
+.srow-value {
+  display: flex;
+  min-height: 64px;
+  align-items: center;
+  overflow: hidden;
+  font-size: 42px;
+  line-height: 64px;
+  white-space: nowrap;
+  color: var(--light);
+}
+
+.srow-note {
+  overflow: hidden;
+  font-size: 28px;
+  line-height: 38px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--sand);
+}
+
+.pin-row,
+.name-row,
+.delay-row {
+  min-height: 164px;
+}
+
+.pin,
+.pin-input {
+  font-family: "Anton", Impact, "Arial Narrow", sans-serif;
+  font-size: 52px;
+  font-variant-numeric: tabular-nums;
+  line-height: 64px;
+  letter-spacing: 0.24em;
+  color: var(--light);
+}
+
+.pin-input {
+  width: 260px;
+  height: 64px;
+  padding: 0 16px;
+  border: 2px solid var(--sand-rule);
+  outline: none;
+  background: #08070c;
+  font-family: "Anton", Impact, "Arial Narrow", sans-serif;
+}
+
+.name-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The delay is a number the remote steps, so it never changes width under the
+   ring. Change reveals the two 64 px steps in place; the value stays left. */
+.delay-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.delay-steps {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.delay-steps .saction + .saction {
+  margin-left: 16px;
+}
+
+.delay-step {
+  min-width: 64px;
+  padding: 0 16px;
+  font-size: 34px;
+  line-height: 60px;
+  text-transform: none;
+}
+
+.name-input {
+  width: 100%;
+  height: 64px;
+  padding: 0 16px;
+  border: 2px solid var(--sand-rule);
+  outline: none;
+  background: #08070c;
+  color: var(--light);
+  font: inherit;
+  font-size: 44px;
+}
+
+.server-name {
+  overflow: hidden;
+  max-width: 430px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.server-state {
+  display: flex;
+  align-items: center;
+  margin-left: 28px;
+}
+
+.server-dot {
+  width: 16px;
+  height: 16px;
+  margin-right: 12px;
+  border-radius: 50%;
+  background: var(--sand);
+}
+
+.server-dot.is-live {
+  background: var(--neon);
+}
+
+.server-word {
+  font-size: 30px;
+  line-height: 40px;
+  color: var(--sand);
+}
+
+/* Every action is one shape: 64 px tall, 28 px Anton, a sand rule at rest. */
+.saction {
+  flex-shrink: 0;
+  min-width: 64px;
+  min-height: 64px;
+  padding: 0 26px;
+  border: 2px solid var(--sand-rule);
+  outline: none;
+  background: transparent;
+  color: var(--light);
+  font-family: "Anton", Impact, "Arial Narrow", sans-serif;
+  font-size: 28px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.saction:hover {
+  border-color: var(--sand);
+}
+
+.saction-primary {
+  border-color: var(--light);
+  background: var(--light);
+  color: var(--ink);
+}
+
+.saction[disabled] {
+  border-color: var(--sand-rule);
+  background: transparent;
+  color: var(--sand);
+  opacity: 0.38;
+  cursor: default;
+}
+
+.settings-actions {
+  display: flex;
+  flex-shrink: 0;
+  min-height: 100px;
+  align-items: center;
+  padding: 18px 0;
+  border-top: 2px solid rgba(var(--sand-rgb), 0.22);
+}
+
+.settings-actions .saction + .saction {
+  margin-left: 16px;
+}
+
+.settings-status {
+  overflow: hidden;
+  margin-left: 28px;
+  font-size: 28px;
+  line-height: 38px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--sand);
+}
+
+.discard-row {
+  padding-right: 0;
+  padding-left: 24px;
+  background: rgba(var(--light-rgb), 0.06);
+  border-top-color: var(--light-rule);
+}
+
+.discard-row .saction + .saction {
+  margin-left: 16px;
+}
+
+/* The last row is the way out, pinned to the bottom so the remote never has to
+   hunt for an exit. */
+.settings-done {
+  flex-shrink: 0;
+  width: 100%;
+  min-height: 80px;
+  margin-top: auto;
+  border: 2px solid var(--sand-rule);
+  outline: none;
+  background: transparent;
+  color: var(--light);
+  font-family: "Anton", Impact, "Arial Narrow", sans-serif;
+  font-size: 30px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.settings-done:hover {
+  border-color: var(--sand);
+}
+
+/* ---------- credits overlay ------------------------------------------------
+   The Easter egg, opened by the wordmark's `takt:credits` event. A full-screen
+   ink page read from 3 m: the wordmark and the facts on the 96 px safe edge,
+   the punchline as the one large line, the credits at 24 px and the way out
+   pinned to the bottom. It holds no control, so it is not a d-pad stop; any
+   key, a click or Back closes it.
+
+   One 200 ms gesture in and out: the ink field fades while the page drifts
+   14 px up into place (and back down on the way out). Only opacity and
+   transform animate, the entry runs once, and there is no continuous motion. */
+.credits {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 1920px;
+  height: 1080px;
+  z-index: 40;
+  overflow: hidden;
+  outline: none;
+  /* The same room as the stage: ink on the left, the night field on the right,
+     with the seam's angle. A flat ink rectangle read as a web page on top. */
+  background: linear-gradient(
+    100deg,
+    var(--ink) 0%,
+    var(--ink) 43%,
+    var(--night) 43%,
+    var(--night) 100%
+  );
+  cursor: default;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-animation: credits-field-in 200ms cubic-bezier(0.23, 1, 0.32, 1);
+  animation: credits-field-in 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.credits.is-closing {
+  -webkit-animation: credits-field-out 200ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  animation: credits-field-out 200ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+.credits-page {
+  position: absolute;
+  left: 96px;
+  /* The signature sits where the masthead sits, so the page opens with the thing
+     the viewer just clicked, in the stage's own voice. */
+  top: 54px;
+  width: 1728px;
+  -webkit-animation: credits-page-in 200ms cubic-bezier(0.23, 1, 0.32, 1);
+  animation: credits-page-in 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.credits.is-closing .credits-page {
+  -webkit-animation: credits-page-out 200ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  animation: credits-page-out 200ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+.credits-logo {
+  display: -webkit-box;
+  display: flex;
+  -webkit-box-align: center;
+  align-items: center;
+}
+
+.credits-logo-mark {
+  display: block;
+  width: 105px;
+  height: 88px;
+  margin-right: 22px;
+  color: var(--light);
+}
+
+.credits-wordmark {
+  font-family: "Anton", Impact, "Arial Narrow", sans-serif;
+  font-size: 40px;
+  line-height: 44px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sand);
+}
+
+.credits-sub {
+  margin-top: 24px;
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 42px;
+  letter-spacing: 0.01em;
+  color: var(--light);
+}
+
+.credits-built {
+  margin-top: 8px;
+  font-size: 28px;
+  line-height: 38px;
+  letter-spacing: 0.01em;
+  color: var(--sand);
+}
+
+.credits-gta {
+  /* The punchline's caption, not a second headline. */
+  margin-top: 64px;
+  font-size: 26px;
+  font-weight: 400;
+  line-height: 38px;
+  letter-spacing: 0.01em;
+  color: var(--sand);
+}
+
+/* The one accent: a 72 x 4 px neon rule above the punchline, flat paint. */
+.credits-mark {
+  display: block;
+  width: 72px;
+  height: 4px;
+  margin-top: 16px;
+  background: var(--neon);
+}
+
+.credits-punch {
+  margin-top: 22px;
+  overflow: hidden;
+  font-family: "Anton", Impact, "Arial Narrow", sans-serif;
+  font-size: 120px;
+  line-height: 128px;
+  letter-spacing: 0.005em;
+  white-space: nowrap;
+  color: var(--light);
+}
+
+.credits-punch + .credits-credit {
+  margin-top: 50px;
+}
+
+.credits-credit {
+  overflow: hidden;
+  font-size: 24px;
+  line-height: 36px;
+  letter-spacing: 0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--sand);
+}
+
+.credits-hint {
+  position: absolute;
+  left: 96px;
+  bottom: 156px;
+  display: -webkit-box;
+  display: flex;
+  -webkit-box-align: center;
+  align-items: center;
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 38px;
+  letter-spacing: 0.02em;
+  color: var(--sand);
+}
+
+/* The only neon on the page, spent where the stage spends its accent. */
+.credits-hint-mark {
+  display: block;
+  width: 14px;
+  height: 14px;
+  margin-right: 18px;
+  background: var(--neon);
+}
+
+@-webkit-keyframes credits-field-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes credits-field-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@-webkit-keyframes credits-page-in {
+  from {
+    opacity: 0;
+    -webkit-transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    -webkit-transform: translateY(0);
+  }
+}
+
+@keyframes credits-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@-webkit-keyframes credits-field-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes credits-field-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@-webkit-keyframes credits-page-out {
+  from {
+    opacity: 1;
+    -webkit-transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    -webkit-transform: translateY(10px);
+  }
+}
+
+@keyframes credits-page-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+.is-hidden {
+  display: none;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+@-webkit-keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@-webkit-keyframes fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@-webkit-keyframes panel-in {
+  from {
+    -webkit-transform: translateX(64px);
+  }
+  to {
+    -webkit-transform: translateX(0);
+  }
+}
+
+@keyframes panel-in {
+  from {
+    transform: translateX(64px);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@-webkit-keyframes panel-out {
+  from {
+    -webkit-transform: translateX(0);
+  }
+  to {
+    -webkit-transform: translateX(64px);
+  }
+}
+
+@keyframes panel-out {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(64px);
+  }
+}

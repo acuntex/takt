@@ -1,0 +1,11 @@
+{
+  "type": "server/hello",
+  "payload": {
+    "server_id": "test_server_hello_0000000000000000000000000",
+    "name": "Music Assistant (music-assistant-0)",
+    "version": 1,
+    "connection_reason": "discovery",
+    "active_roles": ["player@v1", "controller@v1", "metadata@v1"],
+    "future_field": { "ignored": true }
+  }
+}

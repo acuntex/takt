@@ -1,0 +1,10 @@
+{
+  "type": "server/command",
+  "payload": {
+    "player": {
+      "command": "volume",
+      "volume": 55,
+      "future_field": "ignored"
+    }
+  }
+}

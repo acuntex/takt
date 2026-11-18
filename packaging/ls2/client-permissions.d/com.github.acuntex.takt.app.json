@@ -1,0 +1,7 @@
+{
+  "com.github.acuntex.takt-*": [
+    "public",
+    "com.github.acuntex.takt.service.group",
+    "org.webosbrew.hbchannel.service.group"
+  ]
+}

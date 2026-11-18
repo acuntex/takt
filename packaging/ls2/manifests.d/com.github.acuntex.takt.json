@@ -1,0 +1,17 @@
+{
+  "id": "com.github.acuntex.takt",
+  "serviceFiles": ["/var/luna-service2-dev/services.d/com.github.acuntex.takt.service"],
+  "roleFiles": [
+    "/var/luna-service2-dev/roles.d/com.github.acuntex.takt.service.json",
+    "/var/luna-service2-dev/roles.d/com.github.acuntex.takt.app.json"
+  ],
+  "apiPermissionFiles": [
+    "/var/luna-service2-dev/api-permissions.d/com.github.acuntex.takt.service.api.json"
+  ],
+  "version": "0.1.0",
+  "clientPermissionFiles": [
+    "/var/luna-service2-dev/client-permissions.d/com.github.acuntex.takt.service.service.json",
+    "/var/luna-service2-dev/client-permissions.d/com.github.acuntex.takt.service.root.json",
+    "/var/luna-service2-dev/client-permissions.d/com.github.acuntex.takt.app.json"
+  ]
+}

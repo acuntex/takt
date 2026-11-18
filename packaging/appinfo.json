@@ -1,0 +1,13 @@
+{
+  "id": "com.github.acuntex.takt",
+  "version": "0.1.0",
+  "vendor": "acuntex",
+  "type": "web",
+  "main": "index.html",
+  "title": "Takt",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png",
+  "bgColor": "#0b0d12",
+  "iconColor": "#17161c",
+  "appDescription": "A Music Assistant player for rooted LG webOS 4 TVs."
+}

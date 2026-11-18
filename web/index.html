@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Takt</title>
+    <link rel="stylesheet" href="/style.css?v=vice43" />
+  </head>
+
+  <!--
+    The stage is state-driven from body classes, so a remote maps 1:1:
+      state-playing | state-paused | state-connecting | state-ready | state-offline
+      palette-leonida (the fixed palette; the stylesheet keeps the other stops)
+      is-empty        (nothing is loaded: the deliberate empty screen, no card)
+      is-idle         (burn-in: chrome gone, one line on the upper third, the sleeve orbits)
+      has-cover       (a cover is decoded; the drawn sleeve is hidden)
+      tinted          (the cover contributed the spine stops)
+      lum-hi          (bright cover: the ghost drops to a hint)
+      show-volume     (the numeral is visible for ~1.5 s)
+      settings-open
+      credits-open    (the wordmark's Easter egg page is up)
+      bar-focused     (the seek bar holds the ring: elapsed at the left end,
+                       "x left" under the bar's right end, "Reconnecting" when
+                       the session is not live)
+  -->
+  <body class="state-ready palette-leonida is-empty">
+    <!-- The 1920x1080 canvas. app.js scales this wrapper to the screen. -->
+    <div id="viewport" class="viewport">
+      <div id="stage" class="stage">
+        <!-- The right field: a 1500 px square rotated -10deg, clipped, so the cut edge
+             runs from (742, 0) to (932, 1080). Inside it the ghost — the same artwork,
+             cropped to a detail and blurred once — fills the field, and the spine keeps
+             the printed edge. The ghost is static: nothing in here animates. -->
+        <div class="plate" aria-hidden="true">
+          <div id="ghost" class="ghost">
+            <div id="ghost-scene" class="art-scene">
+              <div class="a-sky"></div>
+              <div class="a-glow"></div>
+              <div class="a-foot"></div>
+            </div>
+            <img id="ghost-cover" class="ghost-cover" alt="" />
+          </div>
+          <div class="spine"></div>
+        </div>
+
+        <!-- The artwork card: 620 px square at -10deg, its left edge on the seam, so the
+             cover shows 1:1 and nothing is cropped. The drawn night scene scales into the
+             same card when a track has no artwork. -->
+        <div id="card" class="card" aria-hidden="true">
+          <div class="card-frame">
+            <div id="art" class="art">
+              <div id="art-scene" class="art-scene">
+                <div class="a-sky"></div>
+                <div class="a-glow"></div>
+                <div class="a-foot"></div>
+              </div>
+              <img id="cover" class="cover" alt="" />
+            </div>
+          </div>
+        </div>
+
+        <!-- The top bar, inside the 5 % safe area: the wordmark and the room it plays in
+             on the left, one labelled control on the right. Nothing floats in a corner.
+             The wordmark dispatches `takt:credits` on click, which opens the credits
+             page below; it is not a d-pad stop, so the bar carries exactly one control.
+             Up from the transport, or from the progress bar once a track is loaded,
+             lands on Settings; Down returns to the control the remote came from. Right
+             from Next reaches the bar; there Left/Right only ever seek and Down steps
+             back onto play-pause. -->
+        <header class="topbar">
+          <button id="brand" class="brand" type="button" tabindex="-1" aria-label="Takt credits">
+            <span class="brand-name">Takt</span><i id="room-sep" class="room-sep" hidden>·</i
+            ><span id="room" class="room"></span>
+          </button>
+          <button
+            id="settings-toggle"
+            class="settings-toggle"
+            type="button"
+            data-focusable
+            aria-controls="settings-panel"
+            aria-expanded="false"
+          >
+            Settings
+          </button>
+        </header>
+
+        <div id="content" class="content">
+          <!-- The state block leads the title: an icon and a 36 px word in the slot
+               the 26 px state word had. Each state owns its mark, so a play triangle
+               only ever means Playing — never a paused, connecting or offline screen
+               wearing a glyph it cannot deliver. -->
+          <div id="state" class="state">
+            <span class="state-mark" aria-hidden="true">
+              <svg class="m-play" viewBox="0 0 24 24">
+                <path d="M7 4.4v15.2L20.4 12z" />
+              </svg>
+              <svg class="m-pause" viewBox="0 0 24 24">
+                <path d="M6.4 4.4h4.4v15.2H6.4z" />
+                <path d="M13.2 4.4h4.4v15.2h-4.4z" />
+              </svg>
+              <span class="m-connecting"><i></i><i></i><i></i></span>
+              <i class="m-dot"></i>
+            </span>
+            <span id="state-word" class="state-word">Ready</span>
+          </div>
+
+          <h1 id="title" class="title">
+            <span id="title-1" class="t1"></span>
+            <span id="title-2" class="t2"></span>
+          </h1>
+
+          <div id="artist" class="artist"></div>
+          <div id="album" class="album" hidden></div>
+        </div>
+
+        <!-- The rail lives inside the ink half: no floating plate, and the bar stops
+             at x 880, left of the cut edge at every rail row. -->
+        <div id="rail" class="rail">
+          <button
+            id="prev"
+            class="btn t-prev"
+            type="button"
+            data-focusable
+            aria-label="Previous track"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6.4 5h2.6v14H6.4z" />
+              <path d="M20 5v14l-8.8-7z" />
+            </svg>
+          </button>
+
+          <button id="play-pause" class="btn t-play" type="button" data-focusable aria-label="Play">
+            <svg class="g-pause" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6.6 5h3.6v14H6.6z" />
+              <path d="M13.8 5h3.6v14h-3.6z" />
+            </svg>
+            <svg class="g-play" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 5v14l12-7z" />
+            </svg>
+          </button>
+
+          <button id="next" class="btn t-next" type="button" data-focusable aria-label="Next track">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 5v14l8.8-7z" />
+              <path d="M15 5h2.6v14H15z" />
+            </svg>
+          </button>
+
+          <div id="prog" class="prog">
+            <!-- The bar is the rail's fourth d-pad stop, but only while a track
+                 with a known duration is loaded and the stage is live: app.js
+                 writes `data-focusable` and `tabindex=0` then (see
+                 `syncBarStop`), so the boot frame, connecting, offline and the
+                 empty screen keep today's inert bar. Left/Right step 10 s and
+                 hold the focus; Down steps onto play-pause and Up goes to
+                 Settings. The body is 20 px over a 344 px track (x 496..840), so
+                 the focus ring closes against the ink field. The cream cursor is
+                 the remote's answer: it moves on the press while the fill stays
+                 on the daemon's last confirmed position. aria-valuenow is the
+                 cursor in seconds and aria-valuetext the "n:n left" the caption
+                 prints. -->
+            <div
+              id="progress-track"
+              class="bar"
+              role="slider"
+              tabindex="-1"
+              aria-label="Seek"
+              aria-valuemin="0"
+              aria-valuemax="0"
+              aria-valuenow="0"
+              aria-valuetext="Live"
+            >
+              <div id="progress-fill" class="fill"></div>
+              <i id="progress-cursor" class="cursor"></i>
+            </div>
+            <div id="ledger" class="ledger">
+              <span id="ledger-track"></span><i id="ledger-sep" class="is-hidden">·</i
+              ><b id="ledger-left">0:00 left</b>
+            </div>
+          </div>
+
+          <div id="volume" class="vol" aria-hidden="true"></div>
+        </div>
+
+        <!-- The spectrum band: three thin horizontal bars under the transport
+             baseline (y 952), in the empty lower-left of the ink field. Bass,
+             mid and treble drive one bar each; the bar grows from its left edge
+             on scaleX, written at 20 Hz with no transition. The group fades on
+             opacity only, when it joins or leaves the playing frame. It is
+             decoration: no focus, no pointer, never in the d-pad path. -->
+        <div id="band" class="band" aria-hidden="true">
+          <i id="band-bass" class="band-bar band-bass"></i>
+          <i id="band-mid" class="band-bar band-mid"></i>
+          <i id="band-treble" class="band-bar band-treble"></i>
+        </div>
+
+        <!-- Idle: a sand state word, one 60 px line and the artist on the upper third,
+             where the type block and the rail leave the field quiet. -->
+        <div id="idle-line" class="idle">
+          <div id="idle-state" class="idle-state">Ready</div>
+          <div class="idle-text"><i class="idle-mark"></i><span id="idle-title"></span></div>
+          <div id="idle-artist" class="idle-artist"></div>
+          <!-- The screen without transport still answers "how far in": one thin
+               line under the line, the same accent fill the rail uses, and its
+               own 3 px cream cursor on the leading edge. -->
+          <div class="idle-progress">
+            <div class="idle-bar">
+              <i id="idle-fill" class="idle-fill"></i><i id="idle-cursor" class="idle-cursor"></i>
+            </div>
+            <span id="idle-left" class="idle-left">0:00 left</span>
+          </div>
+        </div>
+
+        <!-- The empty screen: nothing is loaded, so there is no sleeve to draw and
+             no title to set. One 32 px statement, the way out, and who this player
+             is. The wordmark stays once, in the top bar; in idle the block takes
+             the burn-in orbit instead of the card. -->
+        <div id="empty" class="empty">
+          <svg class="empty-mark" viewBox="88 120 335 280" aria-hidden="true" focusable="false">
+            <rect x="88" y="120" width="336" height="52" rx="26" fill="currentColor" />
+            <rect x="290" y="146" width="52" height="254" rx="8" fill="currentColor" />
+            <polygon points="350,206 350,366 419,290 419,282" class="takt-playhead" />
+          </svg>
+          <div class="empty-title">Nothing playing</div>
+          <div class="empty-hint">Start from Music Assistant on your phone</div>
+          <div class="empty-id">
+            <i id="empty-dot" class="empty-dot"></i>
+            <span id="empty-name" class="empty-name"></span>
+            <i id="empty-sep" class="empty-sep" hidden>·</i>
+            <span id="empty-server" class="empty-server"></span>
+          </div>
+        </div>
+
+        <p id="message" class="message" role="status">&nbsp;</p>
+      </div>
+
+      <div id="settings-backdrop" class="settings-backdrop" hidden></div>
+
+      <!-- The settings surface: a 1000 px left-aligned stage that uses the full
+           height, because this panel is read from 3 m. Labels 30 px, values
+           40-52 px, every control at least 64 px tall. There is no spine switch
+           (the theme is fixed) and no server field (the server is written at
+           install); the PIN is shown once, hidden behind Reveal on the TV. -->
+      <aside
+        id="settings-panel"
+        class="settings-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-title"
+        hidden
+      >
+        <div class="settings-heading">
+          <h2 id="settings-title">Settings</h2>
+          <button
+            id="settings-close"
+            class="settings-close"
+            type="button"
+            data-focusable
+            aria-label="Close settings"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M6.4 5 12 10.6 17.6 5 19 6.4 13.4 12 19 17.6 17.6 19 12 13.4 6.4 19 5 17.6 10.6 12 5 6.4z"
+              />
+            </svg>
+          </button>
+        </div>
+
+        <div class="settings-rows">
+          <!-- One PIN, one purpose. On the TV the daemon hands the page the PIN
+               on loopback; from the LAN the same row becomes a four-digit entry
+               because the readout is forbidden there. Never both at once. -->
+          <section class="srow pin-row">
+            <div class="srow-main">
+              <h3 class="srow-label">Setup PIN</h3>
+              <p class="srow-value">
+                <span id="pin" class="pin">••••</span>
+                <input
+                  id="pin-input"
+                  class="pin-input"
+                  name="pin"
+                  type="text"
+                  maxlength="4"
+                  inputmode="numeric"
+                  autocomplete="off"
+                  data-focusable
+                  hidden
+                />
+              </p>
+              <p id="pin-hint" class="srow-note">Writes from this TV, e.g. renaming the player</p>
+            </div>
+            <button
+              id="pin-reveal"
+              class="saction"
+              type="button"
+              data-focusable
+              aria-pressed="false"
+            >
+              Reveal
+            </button>
+          </section>
+
+          <!-- Read-only: this is a TV, not a keyboard, and the endpoint is part
+               of the installation. The dot and the word are the link state. -->
+          <section class="srow server-row">
+            <div class="srow-main">
+              <h3 class="srow-label">Server</h3>
+              <p class="srow-value">
+                <span id="server" class="server-name"></span>
+                <span class="server-state">
+                  <i id="server-dot" class="server-dot"></i>
+                  <span id="server-word" class="server-word">Waiting</span>
+                </span>
+              </p>
+              <p class="srow-note">Set at install</p>
+            </div>
+          </section>
+
+          <!-- The one value worth typing on a TV. The remote's keyboard opens on
+               the input; the row reads as a value until Change is pressed. -->
+          <section class="srow name-row">
+            <div class="srow-main">
+              <label class="srow-label" for="player-name">Player name</label>
+              <p class="srow-value">
+                <span id="player-name-value" class="name-value"></span>
+                <input
+                  id="player-name"
+                  class="name-input"
+                  name="player_name"
+                  type="text"
+                  autocomplete="off"
+                  data-focusable
+                  hidden
+                />
+              </p>
+              <p class="srow-note">Takes effect after a restart</p>
+            </div>
+            <button id="name-edit" class="saction" type="button" data-focusable>Change</button>
+          </section>
+
+          <!-- The delay after the TV's audio port. Each step writes at once:
+               tuning it by ear against another group member means stepping
+               while the music plays, not pressing Save between steps. -->
+          <section class="srow delay-row">
+            <div class="srow-main">
+              <h3 class="srow-label">TV audio delay</h3>
+              <p class="srow-value">
+                <span id="output-delay-value" class="delay-value">0 ms</span>
+              </p>
+              <p class="srow-note">10 ms steps for ARC or optical output</p>
+            </div>
+            <button id="delay-edit" class="saction" type="button" data-focusable>Change</button>
+            <div id="delay-steps" class="delay-steps" hidden>
+              <button
+                id="delay-down"
+                class="saction delay-step"
+                type="button"
+                data-focusable
+                aria-label="Decrease TV audio delay"
+              >
+                −
+              </button>
+              <button
+                id="delay-up"
+                class="saction delay-step"
+                type="button"
+                data-focusable
+                aria-label="Increase TV audio delay"
+              >
+                +
+              </button>
+            </div>
+          </section>
+
+          <div class="settings-actions">
+            <button
+              id="save-config"
+              class="saction saction-primary"
+              type="button"
+              data-focusable
+              disabled
+            >
+              Save
+            </button>
+            <button id="cancel-config" class="saction" type="button" data-focusable disabled>
+              Cancel
+            </button>
+            <p id="config-message" class="settings-status" role="status">&nbsp;</p>
+          </div>
+
+          <!-- The unsaved-edit question is a row of this panel, not a modal: the
+               remote never leaves the surface it is already navigating. -->
+          <section id="discard-row" class="srow discard-row" hidden>
+            <div class="srow-main">
+              <h3 class="srow-label">Discard changes?</h3>
+            </div>
+            <button id="discard-yes" class="saction" type="button" data-focusable>Discard</button>
+            <button id="discard-no" class="saction saction-primary" type="button" data-focusable>
+              Keep editing
+            </button>
+          </section>
+
+          <button id="settings-done" class="settings-done" type="button" data-focusable>
+            Done
+          </button>
+        </div>
+      </aside>
+
+      <!-- The Easter egg: the wordmark's `takt:credits` event opens this page. A
+           full-screen ink field for the project's own lore, read from 3 m: one
+           wordmark, three facts, one large Anton punchline and the small
+           credits. There is no control inside — any key, a click or Back closes
+           it — and it is never in the d-pad path. The entry is one 200 ms fade
+           with a small upward drift; only opacity and transform animate. -->
+      <section
+        id="credits"
+        class="credits"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Credits"
+        tabindex="-1"
+        hidden
+      >
+        <div class="credits-page">
+          <div class="credits-logo">
+            <svg
+              class="credits-logo-mark"
+              viewBox="88 120 335 280"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <rect x="88" y="120" width="336" height="52" rx="26" fill="currentColor" />
+              <rect x="290" y="146" width="52" height="254" rx="8" fill="currentColor" />
+              <polygon points="350,206 350,366 419,290 419,282" class="takt-playhead" />
+            </svg>
+            <p class="credits-wordmark">Takt</p>
+          </div>
+          <p class="credits-sub">A Music Assistant client for LG webOS</p>
+          <p class="credits-built">Built 1–18 November 2026</p>
+          <p class="credits-gta">GTA VI ships 19 November 2026</p>
+          <i class="credits-mark" aria-hidden="true"></i>
+          <p class="credits-punch">We got Takt before GTA 6</p>
+          <p class="credits-credit">Protocol: syncspin (MIT OR Apache-2.0)</p>
+          <p class="credits-credit">Music and artwork: Music Assistant</p>
+          <p class="credits-credit">No game assets, fonts or screenshots were used.</p>
+        </div>
+        <p class="credits-hint">
+          <i class="credits-hint-mark" aria-hidden="true"></i>Press a button
+        </p>
+      </section>
+    </div>
+
+    <script src="/progress.js?v=vice43"></script>
+    <script src="/visual.js?v=vice43"></script>
+    <script src="/app.js?v=vice43"></script>
+  </body>
+</html>

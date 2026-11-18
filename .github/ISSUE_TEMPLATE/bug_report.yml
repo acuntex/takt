@@ -1,0 +1,60 @@
+name: Bug report
+description: Something does not work on the TV or in the daemon.
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste secrets: no TV password, no Music Assistant token and no content of
+        `/media/internal/takt.json`.
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      description: What the TV or the daemon did, and when.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: input
+    id: tv
+    attributes:
+      label: TV model
+      placeholder: e.g. the model shown under Settings - About This TV
+    validations:
+      required: true
+  - type: input
+    id: webos
+    attributes:
+      label: webOS version
+      placeholder: e.g. 4.10.0 (Chromium 53)
+    validations:
+      required: true
+  - type: input
+    id: music-assistant
+    attributes:
+      label: Music Assistant version
+      placeholder: e.g. 2.10.9
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Does the daemon log show the connection?
+      description: Relevant lines from `/tmp/takt.log` on the TV.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: status
+    attributes:
+      label: Output of `GET /api/status`
+      description: "`curl http://<tv-ip>:3927/api/status`"
+      render: json
+    validations:
+      required: true

@@ -1,0 +1,9 @@
+{
+  "exeName": "/media/developer/apps/usr/palm/services/com.github.acuntex.takt.service/takt",
+  "type": "regular",
+  "allowedNames": ["com.github.acuntex.takt.service", "", "*"],
+  "permissions": [
+    { "service": "com.github.acuntex.takt.service", "outbound": ["*"] },
+    { "service": "*", "inbound": ["*"], "outbound": ["*"] }
+  ]
+}
