@@ -104,8 +104,10 @@ The details — the volume guard, the PulseAudio curve, the leave rule, `output_
 
 The Sendspin protocol is published by the Open Home Foundation. Takt is an unofficial client, not
 affiliated with or endorsed by the Open Home Foundation, Music Assistant or LG. It builds on
-[Music Assistant](https://www.music-assistant.io/), GStreamer and PulseAudio, and speaks Sendspin
-through the [`syncspin`](https://github.com/acuntex/syncspin) client library.
+[Music Assistant](https://www.music-assistant.io/), [GStreamer](https://gstreamer.freedesktop.org/)
+and [PulseAudio](https://www.freedesktop.org/wiki/Software/PulseAudio/), and speaks
+[Sendspin](https://github.com/Sendspin/spec) through the
+[`syncspin`](https://github.com/acuntex/syncspin) client library.
 
 The stage typeface is [Anton](https://fonts.google.com/specimen/Anton), Copyright 2020 The Anton
 Project Authors, used under the SIL Open Font License 1.1; the licence ships in
