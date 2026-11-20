@@ -71,6 +71,7 @@ answer, the app offers a single reboot. Takt is also listed in the central
 ## What it does
 
 - Plays through the TV's speakers; the remote pauses, skips and changes the volume.
+- Moves the cover with the bass and the kick, with a live spectrum band under it.
 - Reports volume and mute changes back to Music Assistant, so both sliders agree.
 - Pauses when you leave the app for another one; the Home overlay alone does not pause.
 - Keeps the screensaver and the panel off while the daemon runs.
@@ -103,7 +104,10 @@ The details — the volume guard, the PulseAudio curve, the leave rule, `output_
 
 The Sendspin protocol is published by the Open Home Foundation. Takt is an unofficial client, not
 affiliated with or endorsed by the Open Home Foundation, Music Assistant or LG. It builds on
-[Music Assistant](https://www.music-assistant.io/), GStreamer and PulseAudio.
+[Music Assistant](https://www.music-assistant.io/), [GStreamer](https://gstreamer.freedesktop.org/)
+and [PulseAudio](https://www.freedesktop.org/wiki/Software/PulseAudio/), and speaks
+[Sendspin](https://github.com/Sendspin/spec) through the
+[`syncspin`](https://github.com/acuntex/syncspin) client library.
 
 The stage typeface is [Anton](https://fonts.google.com/specimen/Anton), Copyright 2020 The Anton
 Project Authors, used under the SIL Open Font License 1.1; the licence ships in

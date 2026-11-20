@@ -9,8 +9,9 @@
     return fallback;
   }
 
+  /* Zero is a speed: the server holds the position of a track at speed 0 while a clip plays. */
   function speedOr(value) {
-    if (typeof value === "number" && isFinite(value) && value > 0) {
+    if (typeof value === "number" && isFinite(value) && value >= 0) {
       return value;
     }
     return 1000;
