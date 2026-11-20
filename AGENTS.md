@@ -63,9 +63,9 @@ not project documentation. `docs/README.md` indexes what is committed.
 
 ## Things that bite
 
-- Assets are `include_str!`-embedded: after any `web/` change, rebuild the binary. Also bump the
-  `?v=` query in `web/index.html` (4 occurrences) and `packaging/app-index.html` (3) so the launcher
-  wrapper navigates to a fresh URL.
+- Assets are `include_str!`-embedded: after any `web/` change, rebuild the binary. Also bump every
+  `?v=` query in `web/index.html` and `packaging/app-index.html` so the launcher wrapper navigates
+  to a fresh URL.
 - The daemon serves the UI on `0.0.0.0:3927`; the TV app loads `http://127.0.0.1:3927/`. CDP debug
   port is `9998`, the daemon log is `/tmp/takt.log`.
 - Writing endpoints (`/api/transport`, `/api/config`) need the 4-digit boot PIN, and `/api/pin`
