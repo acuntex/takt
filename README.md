@@ -71,6 +71,7 @@ answer, the app offers a single reboot. Takt is also listed in the central
 ## What it does
 
 - Plays through the TV's speakers; the remote pauses, skips and changes the volume.
+- Moves the cover with the bass and the kick, with a live spectrum band under it.
 - Reports volume and mute changes back to Music Assistant, so both sliders agree.
 - Pauses when you leave the app for another one; the Home overlay alone does not pause.
 - Keeps the screensaver and the panel off while the daemon runs.
