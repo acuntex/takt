@@ -58,6 +58,12 @@ var fast = progress.update(unchanged, status({ playback_speed: 2000 }), 2000);
 check(fast.ms, 6000, "speed change preserves the interpolated position");
 check(progress.position(fast, 2500), 7000, "speed per mille scales the advance");
 
+var held = progress.update(unchanged, status({ playback_speed: 0, metadata_revision: 2 }), 3000);
+check(held.speed, 0, "a speed of zero is kept");
+check(progress.position(held, 9000), 5000, "playing at speed zero does not advance");
+var missingSpeed = progress.update(null, status({ playback_speed: undefined }), 1000);
+check(progress.position(missingSpeed, 2000), 6000, "a missing speed counts as normal speed");
+
 var changedTrack = progress.update(unchanged, status({ title: "Next" }), 3000);
 check(changedTrack.ms, 5000, "track change re-bases to the server position");
 check(changedTrack.at, 3000, "track change resets the base timestamp");

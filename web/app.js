@@ -807,7 +807,7 @@
     }
     var position = seekPending.ms;
     if (current && current.state === "playing") {
-      var speed = progress && progress.speed ? progress.speed : 1000;
+      var speed = progress ? progress.speed : 1000;
       position += ((now - seekPending.at) * speed) / 1000;
     }
     var duration = durationMs();
