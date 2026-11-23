@@ -23,7 +23,7 @@ async function main() {
   console.log(
     "resources ",
     await evaluate(
-      "JSON.stringify(performance.getEntriesByType('resource').map(function(e){return e.name}).filter(function(n){return /(app|visual|style|anton)\\.(js|css|ttf)/.test(n)}))"
+      "JSON.stringify(performance.getEntriesByType('resource').map(function(e){return e.name}).filter(function(n){return /(app|visual|progress|style|anton)\\.(js|css|ttf)/.test(n)}))"
     )
   );
   console.log(
