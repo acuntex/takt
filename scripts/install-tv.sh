@@ -15,6 +15,7 @@
 # Environment:
 #   TV_HOST     TV address or hostname (required, no default; see README.md)
 #   TV_HELPER   SSH helper (default: scripts/tv-ssh.sh in this repo)
+#   TV_PASSWORD root password, read by the default helper (or TV_ASKPASS: an askpass program)
 #   IPK         IPK path (default: newest dist/*.ipk)
 #
 # Usage:
@@ -62,7 +63,11 @@ if [[ "$MODE" == "uninstall" ]]; then
   echo ">> unregistering package (may report an extraction error, the removal is what counts)"
   tv "luna-send -n 1 -f luna://com.webos.appInstallService/remove '{\"id\":\"$APP_ID\"}' >/dev/null 2>&1; sleep 2; true" >/dev/null 2>&1 || true
   echo ">> removing files"
-  if ! tv "set -e; rm -rf '$APP_DIR' '$SERVICE_DIR' '$INITD'; rm -f /var/luna-service2-dev/services.d/$APP_ID.service /var/luna-service2-dev/roles.d/$APP_ID.service.json /var/luna-service2-dev/manifests.d/$APP_ID.json /var/luna-service2-dev/client-permissions.d/$APP_ID.service.service.json /var/luna-service2-dev/client-permissions.d/$APP_ID.service.root.json /var/luna-service2-dev/api-permissions.d/$APP_ID.service.api.json" >/dev/null 2>&1; then
+  if ! tv "set -e
+rm -rf '$APP_DIR' '$SERVICE_DIR' '/media/developer/apps/usr/palm/packages/$APP_ID' '/media/developer/apps/usr/palm/packages/$APP_ID.service' '$INITD'
+for t in /var/luna-service2 /var/luna-service2-dev; do
+  rm -f \"\$t/services.d/$APP_ID.service\" \"\$t/services.d/$APP_ID.service.service\" \"\$t/roles.d/$APP_ID.service.json\" \"\$t/roles.d/$APP_ID.service.service.json\" \"\$t/roles.d/$APP_ID.app.json\" \"\$t/manifests.d/$APP_ID.json\" \"\$t/client-permissions.d/$APP_ID.app.json\" \"\$t/client-permissions.d/$APP_ID.service.service.json\" \"\$t/client-permissions.d/$APP_ID.service.root.json\" \"\$t/api-permissions.d/$APP_ID.service.api.json\"
+done" >/dev/null 2>&1; then
     echo ">> FAIL: removing the files failed (check the password and the TV connection)" >&2
     exit 1
   fi
@@ -76,6 +81,8 @@ if [[ -z "${IPK:-}" || ! -f "$IPK" ]]; then
   echo ">> FAIL: no IPK found; run packaging/build-ipk.sh first or set IPK=" >&2
   exit 1
 fi
+# `ar` runs inside the temp directory below, so a relative IPK would resolve there.
+IPK="$(cd "$(dirname "$IPK")" && pwd)/$(basename "$IPK")"
 echo ">> installing $(basename "$IPK") on $TV_HOST"
 
 WORK="$(mktemp -d)"
@@ -127,4 +134,4 @@ if [[ "$REBOOT" == "yes" ]]; then
     | tr ',' '\n' | grep -E '"(id|title)"' | grep -B1 -A1 "$APP_ID" || true
 fi
 
-echo ">> done. Launcher name/appinfo changes need --reboot the first time."  tv "set -e; rm -rf '$APP_DIR' '$SERVICE_DIR' '/media/developer/apps/usr/palm/packages/com.github.acuntex.takt' '/media/developer/apps/usr/palm/packages/com.github.acuntex.takt.service' '$INITD'; for t in /var/luna-service2 /var/luna-service2-dev; do rm -f \$t/services.d/com.github.acuntex.takt.service \$t/services.d/com.github.acuntex.takt.service.service \$t/roles.d/com.github.acuntex.takt.service.json \$t/roles.d/com.github.acuntex.takt.service.service.json \$t/manifests.d/com.github.acuntex.takt.json \$t/client-permissions.d/com.github.acuntex.takt.app.json \$t/client-permissions.d/com.github.acuntex.takt.service.service.json \$t/client-permissions.d/com.github.acuntex.takt.service.root.json \$t/api-permissions.d/com.github.acuntex.takt.service.api.json; done"
+echo ">> done. Launcher name/appinfo changes need --reboot the first time."
