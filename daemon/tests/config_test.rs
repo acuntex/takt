@@ -8,6 +8,7 @@ mod config;
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Barrier};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -19,14 +20,19 @@ use serde_json::{json, Value};
 /// Temporary directory that is removed when the test finishes.
 struct TempDir(PathBuf);
 
+/// Two tests can start within the same nanosecond, and a shared directory would let one test's
+/// cleanup delete the other's files mid-run.
+static TEMP_DIR_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
 impl TempDir {
     fn new(label: &str) -> Self {
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system clock before Unix epoch")
             .as_nanos();
+        let sequence = TEMP_DIR_SEQUENCE.fetch_add(1, Ordering::Relaxed);
         let path = std::env::temp_dir().join(format!(
-            "takt-config-{label}-{}-{nanos}",
+            "takt-config-{label}-{}-{nanos}-{sequence}",
             std::process::id()
         ));
         fs::create_dir_all(&path).expect("create temp dir");

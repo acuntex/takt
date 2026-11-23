@@ -42,6 +42,10 @@ use visual::{AudioVisual, SharedAudioVisual, VisualLevels};
 
 const TEST_PIN: &str = "1234";
 
+/// Two tests can start within the same nanosecond, and a shared directory would let one test's
+/// cleanup delete the other's files mid-run ("failed to persist default config").
+static TEMP_DIR_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
 struct TempDir(PathBuf);
 
 impl TempDir {
@@ -50,8 +54,11 @@ impl TempDir {
             .duration_since(UNIX_EPOCH)
             .expect("system clock before Unix epoch")
             .as_nanos();
-        let path =
-            std::env::temp_dir().join(format!("takt-http-{label}-{}-{nanos}", std::process::id()));
+        let sequence = TEMP_DIR_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!(
+            "takt-http-{label}-{}-{nanos}-{sequence}",
+            std::process::id()
+        ));
         fs::create_dir_all(&path).expect("create temp dir");
         Self(path)
     }
