@@ -87,6 +87,8 @@ jobs:
         run: |
           node scripts/test-visual.js
           node scripts/test-progress.js
+      - name: Paketversion
+        run: node scripts/version-check.js
       - name: Skill- und Command-Frontmatter
         run: node scripts/skills-check.js
 
