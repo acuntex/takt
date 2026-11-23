@@ -35,7 +35,9 @@ async function main() {
   console.log(
     "rail      ",
     await evaluate(
-      "JSON.stringify({bar:document.getElementById('progress-track').getBoundingClientRect().toJSON(),ledger:document.getElementById('ledger').getBoundingClientRect().toJSON(),play:document.getElementById('play-pause').getBoundingClientRect().toJSON()})"
+      /* webOS 4's Chromium 53 has no DOMRect.toJSON and no x/y, and an exception here hides the
+         whole line. */
+      "JSON.stringify((function(){var box=function(id){var r=document.getElementById(id).getBoundingClientRect();return {x:(r.x===undefined?r.left:r.x),y:(r.y===undefined?r.top:r.y),width:r.width,height:r.height};};return {bar:box('progress-track'),ledger:box('ledger'),play:box('play-pause')};})())"
     )
   );
 
