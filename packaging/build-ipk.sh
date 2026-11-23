@@ -8,15 +8,18 @@
 #
 # Environment:
 #   TAKT_BIN      prebuilt ARMv7 binary (defaults to cargo zigbuild release output)
-#   VERSION       package version (default 0.1.0)
 #   TARGET        Rust target (default armv7-unknown-linux-gnueabi)
 #   CARGO         cargo executable (default cargo)
+#   ALLOW_HOST_BUILD  1 allows a host-linked build when cargo-zigbuild is absent (experiments only;
+#                 the result is not the glibc 2.24 artifact and must never be shipped)
+#
+# The package version is read from packaging/appinfo.json; there is no override.
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PACKAGE_ID="com.github.acuntex.takt"
-VERSION="${VERSION:-0.1.0}"
+VERSION="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["version"])' "$REPO_ROOT/packaging/appinfo.json")"
 TARGET="${TARGET:-armv7-unknown-linux-gnueabi}"
 CARGO="${CARGO:-cargo}"
 
@@ -54,12 +57,19 @@ if [[ -n "${TAKT_BIN:-}" ]]; then
 else
   # Always build: a stale target binary must never be packaged silently. Cargo is incremental.
   BIN="$REPO_ROOT/daemon/target/$TARGET/release/takt"
+  if ! "$CARGO" zigbuild --help >/dev/null 2>&1 && [[ "${ALLOW_HOST_BUILD:-0}" != "1" ]]; then
+    # A plain `cargo build --target` links with the host toolchain: it is not the glibc 2.24
+    # artifact the TV was tested against, and nothing downstream can tell the difference.
+    echo ">> FAIL: cargo-zigbuild is missing; the release build needs it (set ALLOW_HOST_BUILD=1 to override)" >&2
+    exit 1
+  fi
   echo ">> building release ARMv7 binary ($TARGET, glibc 2.24) ..." >&2
   (
     cd "$REPO_ROOT/daemon"
     if "$CARGO" zigbuild --help >/dev/null 2>&1; then
       "$CARGO" zigbuild --release --target "$TARGET.2.24"
     else
+      echo ">> WARNING: host build, not the glibc 2.24 artifact" >&2
       "$CARGO" build --release --target "$TARGET"
     fi
   )

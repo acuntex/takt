@@ -50,9 +50,9 @@ answer, the app offers a single reboot. Takt is also listed in the central
 
 ## First run
 
-1. If Music Assistant asks whether to allow Takt, approve it. The identity is copied into the app's
-   service directory on the first start; back that `takt.json` up if you plan to reinstall, and the
-   approval survives.
+1. If Music Assistant asks whether to allow Takt, approve it. The settings live in
+   `/media/internal/takt.json`, so the approval survives a reinstall; back that file up only before
+   reflashing or resetting the TV.
 2. Pick Takt as the player in Music Assistant and press play.
 3. In **Settings** on the TV you can name the player. The TV page reads the boot PIN itself (the row
    is behind **Reveal**); you only type the PIN when writing from another machine.

@@ -14,6 +14,8 @@
 #   TV_HELPER     shared SSH helper (default: scripts/tv-ssh.sh in this repo)
 #   TAKT_BIN      prebuilt ARMv7 binary; otherwise the release build path is used
 #   TARGET        Rust target (default armv7-unknown-linux-gnueabi)
+#   ALLOW_HOST_BUILD  1 allows a host-linked build when cargo-zigbuild is absent (experiments only;
+#                 the result is not the glibc 2.24 artifact and must never be deployed)
 
 set -euo pipefail
 
@@ -88,12 +90,17 @@ if [[ ! -x "$BIN" ]]; then
     echo ">> FAIL: TAKT_BIN is not executable: $BIN" >&2
     exit 1
   fi
+  if ! cargo zigbuild --help >/dev/null 2>&1 && [[ "${ALLOW_HOST_BUILD:-0}" != "1" ]]; then
+    echo ">> FAIL: cargo-zigbuild is missing; a deploy needs the glibc 2.24 build (set ALLOW_HOST_BUILD=1 to override)" >&2
+    exit 1
+  fi
   echo ">> building release ARMv7 binary ($TARGET, glibc 2.24) ..." >&2
   (
     cd "$REPO_ROOT/daemon"
     if cargo zigbuild --help >/dev/null 2>&1; then
       cargo zigbuild --release --target "$TARGET.2.24"
     else
+      echo ">> WARNING: host build, not the glibc 2.24 artifact" >&2
       cargo build --release --target "$TARGET"
     fi
   )

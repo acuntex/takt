@@ -1,6 +1,10 @@
 ---
 name: webos-tv-manual-install
-description: Use when installing, updating, uninstalling, or re-registering the Takt app on a rooted LG webOS TV - especially when appInstallService/dev/install fails with "-5: Failed to extract package" (unsigned IPK), when the launcher still shows an old app name, or when the app is missing from listApps after an uninstall.
+description:
+  Use when installing, updating, uninstalling, or re-registering the Takt app on a rooted LG webOS
+  TV - especially when appInstallService/dev/install fails with -5 (Failed to extract package) for
+  an unsigned IPK, when the launcher still shows an old app name, or when the app is missing from
+  listApps after an uninstall.
 ---
 
 # Manual install on the rooted LG webOS TV
@@ -14,14 +18,14 @@ over SSH; a reboot is only needed to make a **new or renamed** app show up in th
 
 ```sh
 cd <repo>                                   # the repository root
-packaging/build-ipk.sh                      # builds the ARM binary and dist/*.ipk
-TV_HOST=<tv-ip> bash scripts/install-tv.sh              # update only (no reboot)
-TV_HOST=<tv-ip> bash scripts/install-tv.sh --reboot     # after a rename / first install
-TV_HOST=<tv-ip> bash scripts/install-tv.sh --uninstall  # remove app, service, LS2 and init files
+packaging/build-ipk.sh                      # builds the ARM binary and the IPK
+TV_HOST=<tv-ip> TV_PASSWORD=... IPK="$PWD/dist/com.github.acuntex.takt_<version>_all.ipk" bash scripts/install-tv.sh             # update only (no reboot)
+TV_HOST=<tv-ip> TV_PASSWORD=... IPK="$PWD/dist/com.github.acuntex.takt_<version>_all.ipk" bash scripts/install-tv.sh --reboot  # after a rename / first install
+TV_HOST=<tv-ip> TV_PASSWORD=... bash scripts/install-tv.sh --uninstall                                                        # remove app, service, LS2 and init files
 ```
 
-`TV_HOST` is required; `TV_HELPER` defaults to `scripts/tv-ssh.sh` in the repository and `IPK`
-overrides the newest `dist/*.ipk`.
+`TV_HOST` is required, and so is `TV_PASSWORD` (or `TV_ASKPASS`) for the SSH helper; `TV_HELPER`
+defaults to `scripts/tv-ssh.sh` in the repository, and `IPK` overrides the newest `dist/*.ipk`.
 
 ## What the script does (and why)
 
@@ -33,8 +37,10 @@ overrides the newest `dist/*.ipk`.
 4. Links the boot entry:
    `ln -sf /media/developer/apps/usr/palm/services/com.github.acuntex.takt.service/90-start_takt /var/lib/webosbrew/init.d/90-start_takt`.
 5. `ls-control scan-services`, then starts the native service with
-   `luna-send -n 1 luna://com.github.acuntex.takt/start '{}'` (the init.d script does the same).
-6. Verifies `http://127.0.0.1:3927/api/status` returns JSON with `"state"`.
+   `luna-send -n 1 luna://com.github.acuntex.takt.service/start '{}'` (the init.d script does the
+   same).
+6. Waits up to 30 s for `http://127.0.0.1:3927/api/status` to answer with JSON containing `"state"`.
+   It does not fail when the API stays silent, so gate on the response separately.
 
 ## Reboot rule
 
@@ -47,13 +53,13 @@ overrides the newest `dist/*.ipk`.
 ## Verification
 
 ```sh
-TV_HOST=<tv-ip> scripts/tv-ssh.sh 'curl -s --max-time 2 http://127.0.0.1:3927/api/status | head -c 200'
-TV_HOST=<tv-ip> scripts/tv-ssh.sh 'sleep 2 | luna-send -n 1 -f luna://com.webos.applicationManager/listApps "{}"' \
+TV_HOST=<tv-ip> TV_PASSWORD=... scripts/tv-ssh.sh 'curl -s --max-time 2 http://127.0.0.1:3927/api/status | head -c 200'
+TV_HOST=<tv-ip> TV_PASSWORD=... scripts/tv-ssh.sh 'sleep 2 | luna-send -n 1 -f luna://com.webos.applicationManager/listApps "{}"' \
   | python3 -c 'import json,sys; print([a for a in json.load(sys.stdin)["apps"] if a["id"]=="com.github.acuntex.takt"])'
 curl -s --max-time 3 http://<tv-ip>:3927/api/status | head -c 200
 ```
 
-Expected launcher title is `Takt`, vendor `takt-webos`.
+Expected launcher title is `Takt`, vendor `acuntex`.
 
 ## Pitfalls
 
