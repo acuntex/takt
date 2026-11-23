@@ -213,15 +213,33 @@ function getJson(url) {
   });
 }
 
-async function waitForCdp() {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+async function waitForCdp(chrome, chromeStderr) {
+  for (let attempt = 0; attempt < 300; attempt += 1) {
     try {
       return await getJson(`http://127.0.0.1:${CDP_PORT}/json`);
     } catch (error) {
+      /* A cold runner needs more than a few seconds; a Chrome that never started needs to say so
+         instead of leaving the caller with a timeout. */
+      if (chrome.spawnError) {
+        throw new Error(`Could not start ${CHROME}: ${chrome.spawnError.message}`);
+      }
+      if (chrome.exitCode !== null || chrome.signalCode !== null) {
+        const reported = chromeStderr().trim();
+        const how =
+          chrome.exitCode !== null
+            ? `exited with ${chrome.exitCode}`
+            : `was killed by ${chrome.signalCode}`;
+        throw new Error(
+          `Chrome ${how} before the DevTools endpoint came up` + (reported ? `:\n${reported}` : "")
+        );
+      }
       await sleep(100);
     }
   }
-  throw new Error("Chrome DevTools endpoint did not start");
+  const reported = chromeStderr().trim();
+  throw new Error(
+    "Chrome DevTools endpoint did not start within 30 s" + (reported ? `:\n${reported}` : "")
+  );
 }
 
 function cdpClient(webSocketDebuggerUrl) {
@@ -269,6 +287,7 @@ async function main() {
   const server = startServer();
   await new Promise((resolve) => server.listen(Number(PORT), "127.0.0.1", resolve));
   fs.rmSync(PROFILE, { recursive: true, force: true });
+  let stderr = "";
   const chrome = spawn(
     CHROME,
     [
@@ -281,14 +300,24 @@ async function main() {
       "--window-size=1920,1080",
       "about:blank",
     ],
-    { stdio: "ignore" }
+    { stdio: ["ignore", "ignore", "pipe"] }
   );
+  /* A missing binary emits "error" instead of exiting; unhandled, it would crash with a raw stack. */
+  chrome.on("error", (error) => {
+    chrome.spawnError = error;
+  });
+  chrome.stderr.on("data", (chunk) => {
+    stderr += String(chunk);
+    if (stderr.length > 8000) {
+      stderr = stderr.slice(-8000);
+    }
+  });
 
   const results = [];
   const check = (condition, label) => results.push({ ok: Boolean(condition), label });
 
   try {
-    const targets = await waitForCdp();
+    const targets = await waitForCdp(chrome, () => stderr);
     const page = targets.find((target) => target.type === "page");
     if (!page) {
       throw new Error("No Chrome page target");
