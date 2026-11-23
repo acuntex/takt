@@ -22,29 +22,37 @@ no LAN addresses or home paths. Keep it current.
 # local checks (same order as /verify); everything here is TV-free
 node --check web/app.js && node --check web/visual.js && node --check web/progress.js
 node scripts/test-visual.js && node scripts/test-progress.js
+node scripts/version-check.js          # appinfo.json, Cargo.toml, Cargo.lock, setup.sh, ls2 manifest
 node scripts/skills-check.js            # validates .opencode skill/command frontmatter
 npx prettier --check .                  # pinned prettier 3.9.10
 node scripts/tv/ui-test.js              # headless Chrome; needs google-chrome + Node 22
 
-(cd daemon && cargo fmt --check && cargo test && cargo clippy --all-targets --all-features -- -D warnings)
+(cd daemon && cargo fmt --check && cargo test --locked && cargo clippy --all-targets --all-features --locked -- -D warnings)
 
 packaging/build-ipk.sh                  # cargo zigbuild ARMv7 (glibc 2.24) + dist/*.ipk
+sha256sum dist/com.github.acuntex.takt_<version>_all.ipk  # the artifact a device check names
 TV_HOST=<tv-ip> TV_PASSWORD=... bash scripts/deploy.sh  # binary + service files over SSH, no reboot
 TV_HOST=<tv-ip> TV_PASSWORD=... bash scripts/install-tv.sh [--reboot]
 ```
 
 Both scripts require `TV_HOST`; there is no built-in host. `TV_HELPER` defaults to
-`$PWD/scripts/tv-ssh.sh`. `install-tv.sh` needs an executable helper (it has no `TV_PASSWORD`
-fallback); `deploy.sh` builds its own askpass from `TV_PASSWORD` when no helper is given. A reboot
-is only needed for a new or renamed app entry (launcher registration). Both scripts need
-`cargo-zigbuild` and a `zig` binary (they look in `PATH` and `~/zig/zig`).
+`$PWD/scripts/tv-ssh.sh`, which reads `TV_PASSWORD` or `TV_ASKPASS`; `install-tv.sh` needs an
+executable helper and has no password handling of its own. `deploy.sh` builds its own askpass from
+`TV_PASSWORD` only when the helper is not executable. A reboot is only needed for a new or renamed
+app entry (launcher registration). `packaging/build-ipk.sh` and `scripts/deploy.sh` need
+`cargo-zigbuild`, a `zig` binary (they look in `PATH` and `~/zig/zig`) and Python 3 (the version
+read in `build-ipk.sh`); `install-tv.sh` only needs `ar`, an IPK and the SSH helper.
+
+Before ticking the device box, follow `docs/release-process.md`; it holds the evidence a device
+check needs.
 
 ## CI
 
-`.github/workflows/ci.yml` runs the same gates as `/verify` minus the parts that need hardware:
-`lint` (fmt + clippy), `test` (cargo), `web` (syntax + helper tests + skills-check), `ui` (headless
-Chrome), `format` (Prettier) and `secrets` (gitleaks over history). The ARMv7 build and a deploy
-stay local.
+`.github/workflows/ci.yml` runs the gates that need no hardware, on every pull request: `lint`
+(`cargo fmt`, `cargo clippy --all-targets --all-features --locked`), `test` (`cargo test --locked`),
+`arm` (the ARMv7 cross-build for the TV's glibc 2.24), `web` (syntax, helper tests, version check,
+skills-check), `ui` (headless Chrome), `format` (pinned Prettier) and `secrets` (gitleaks over
+history). The `build-ipk.sh` packaging step, a deploy and the Channel check stay local.
 
 Working notes (designs, plans, ledgers) live in `.work/`, which is git-ignored: they are scratch,
 not project documentation. `docs/README.md` indexes what is committed.
@@ -64,7 +72,7 @@ not project documentation. `docs/README.md` indexes what is committed.
 ## Things that bite
 
 - Assets are `include_str!`-embedded: after any `web/` change, rebuild the binary. Also bump the
-  `?v=` query in `web/index.html` (4 occurrences) and `packaging/app-index.html` (3) so the launcher
+  `?v=` query in `web/index.html` (4 occurrences) and `packaging/app-index.html` (2) so the launcher
   wrapper navigates to a fresh URL.
 - The daemon serves the UI on `0.0.0.0:3927`; the TV app loads `http://127.0.0.1:3927/`. CDP debug
   port is `9998`, the daemon log is `/tmp/takt.log`.
@@ -74,9 +82,10 @@ not project documentation. `docs/README.md` indexes what is committed.
   s query fallback. The page has no leave rule; `GET /api/foreground` stays as the readout.
 - The audible level is the PulseAudio sink `pcm_output` (perceptual curve), not the TV master; the
   daemon drives both. `TAKT_PULSE_SINK` and `TAKT_CONFIG` override sink and config path.
-- Identifiers are fixed: crate/binary `takt`, app id and LS2 service `com.github.acuntex.takt`,
-  service directory `/media/developer/apps/usr/palm/services/com.github.acuntex.takt.service`, init
-  script `90-start_takt`, log `/tmp/takt.log`, identity + config `/media/internal/takt.json`.
+- Identifiers are fixed: crate/binary `takt`, app id `com.github.acuntex.takt`, LS2 service
+  `com.github.acuntex.takt.service`, service directory
+  `/media/developer/apps/usr/palm/services/com.github.acuntex.takt.service`, init script
+  `90-start_takt`, log `/tmp/takt.log`, identity + config `/media/internal/takt.json`.
 
 ## Hard constraints
 
@@ -96,9 +105,10 @@ not project documentation. `docs/README.md` indexes what is committed.
   before a reboot.
 - Leave the TV in the state the user had it (app open, volume restored) after manual tests.
 - Keep tests hermetic: no test may bind the TV, start audio processes or need the network.
-- Conventional Commits; small, verified steps. There is no CI: `.pre-commit-config.yaml` (gitleaks,
-  rustfmt, clippy, Prettier, shellcheck) and `/verify` are the gates. Never commit `TV_PASSWORD`,
-  the MA token or a local token file. Include the IPK hash when deploying.
+- Conventional Commits; small, verified steps. Pre-commit (`.pre-commit-config.yaml`: gitleaks,
+  rustfmt, clippy, Prettier, shellcheck) and `/verify` are the local gates; CI runs the jobs in
+  `.github/workflows/ci.yml` on every PR, and `shellcheck` stays a pre-commit hook. Never commit
+  `TV_PASSWORD`, the MA token or a local token file. Include the IPK hash when deploying.
 
 ## OpenCode assets
 
@@ -115,6 +125,8 @@ not project documentation. `docs/README.md` indexes what is committed.
 ## Skills
 
 - `webos-tv-manual-install` - unsigned IPK, manual install, launcher registration/reboot.
+- `takt-device-check` - device check before the PR box is ticked, and the evidence it needs.
+- `takt-release` - version bump, release, Channel repo and the update test.
 - `webos-chromium53-ui` - renderer limits, measured animation costs, theme architecture.
 - `webos-tv-debugging` - CDP harnesses, stale-UI checklist, fps interpretation.
 - `sendspin-player-runtime` - protocol, volume/mute, sink, app-leave pause.
