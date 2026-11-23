@@ -72,9 +72,13 @@ Then:
 4. Close and reopen Takt, with permission. An open page keeps serving the old assets:
 
    ```sh
-   TV_HOST=<tv-ip> TV_PASSWORD=... bash scripts/tv-ssh.sh 'luna-send -n 1 luna://com.webos.applicationManager/closeByAppId "{\"id\":\"com.github.acuntex.takt\"}"'
-   TV_HOST=<tv-ip> TV_PASSWORD=... bash scripts/tv-ssh.sh 'luna-send -n 1 luna://com.webos.applicationManager/launch "{\"id\":\"com.github.acuntex.takt\"}"'
+   TV_HOST=<tv-ip> TV_PASSWORD=... bash scripts/tv-ssh.sh 'sleep 3 | luna-send -n 1 luna://com.webos.applicationManager/closeByAppId "{\"id\":\"com.github.acuntex.takt\"}"'
+   TV_HOST=<tv-ip> TV_PASSWORD=... bash scripts/tv-ssh.sh 'sleep 3 | luna-send -n 1 luna://com.webos.applicationManager/launch "{\"id\":\"com.github.acuntex.takt\"}"'
    ```
+
+   `luna-send` leaves as soon as its stdin hits end-of-file — without the `sleep |` in front it
+   exits before it sends or prints anything, and the app never moves. Verified on the TV: with the
+   pipe it answers, without it the call is silent and does nothing.
 
    Retry the next step for up to 30 seconds: the wrapper polls, then redirects to `127.0.0.1:3927`,
    and CDP only sees the app page after that. The wrapper's "Takt needs one restart" page is a
