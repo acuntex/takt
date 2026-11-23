@@ -1215,6 +1215,45 @@ async function main() {
     status.metadata_revision += 1;
     await waitFor("document.body.className.indexOf('state-playing') !== -1", 4000);
 
+    /* A held playback: the server reports "playing" with speed 0 while it holds the
+       position. The seek is accepted, and the cursor it parks at the target must not
+       creep forward while the status says the track stands still. */
+    status.playback_speed = 0;
+    status.metadata_revision += 1;
+    await sleep(1200);
+    await evaluate("document.getElementById('progress-track').focus()");
+    const holdFocus = await evaluate("document.activeElement.id");
+    const bodiesBeforeHold = transportBodies.length;
+    await press("ArrowRight", "ArrowRight", 39);
+    await sleep(150);
+    const holdBody = transportBodies[transportBodies.length - 1];
+    const heldCursor = () =>
+      evaluate(
+        "parseFloat(document.getElementById('progress-cursor').style.transform.replace(/[^0-9.]/g,''))"
+      );
+    const heldFirst = Number(await heldCursor());
+    await sleep(1000);
+    const heldSecond = Number(await heldCursor());
+    check(
+      holdFocus === "progress-track" &&
+        transportBodies.length === bodiesBeforeHold + 1 &&
+        Boolean(holdBody) &&
+        holdBody.cmd === "seek_relative" &&
+        holdBody.offset_ms === 10000 &&
+        heldFirst === heldSecond,
+      "a held playback takes the seek and keeps the cursor still instead of running at 1x"
+    );
+
+    /* Confirm the seek at the target so the pending window closes, then hand the
+       status back: the paused checks below expect the track at 118 s at speed 1. */
+    status.progress_ms = 128000;
+    status.metadata_revision += 1;
+    await sleep(500);
+    status.playback_speed = 1000;
+    status.progress_ms = 118000;
+    status.metadata_revision += 1;
+    await sleep(200);
+
     /* ---------- paused ------------------------------------------------------ */
     status.state = "paused";
     status.metadata_revision += 1;
