@@ -18,8 +18,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, Result};
 use syncspin_client::{
-    next_backoff, AudioMode, Client, ClientConfig, ControlHandle, DeviceInfo, Event, EventStream,
-    StreamEndReason, VolumePolicy,
+    next_backoff, ArtworkImage, AudioMode, Client, ClientConfig, ColorScheme, ControlHandle,
+    DeviceInfo, Event, EventStream, StreamEndReason, VolumePolicy,
 };
 use tokio::sync::mpsc;
 
@@ -27,7 +27,7 @@ use crate::config::Config;
 use crate::discovery::ServerFinder;
 use crate::foreground::{arm_grace, GraceUntil};
 use crate::sink::gst::{GstSink, GstSinkHandle, SharedOutputDelay};
-use crate::state::{AppState, PlaybackState, SharedAppState};
+use crate::state::{AppState, PlaybackState, SharedAppState, ThemeColors};
 use crate::visual::SharedAudioVisual;
 
 /// Upper bound for the client's reconnect delay: the sequence is 1, 2, 4 … 16, 30 seconds.
@@ -179,6 +179,21 @@ pub enum PlaybackEvent {
         /// Playback speed per mille; `1000` is normal speed.
         playback_speed: u32,
     },
+    /// The server cleared the now-playing metadata while playback continues.
+    ///
+    /// The metadata role owns these seven fields; artwork and color keep their own lifecycles.
+    TrackCleared,
+    /// An artwork channel shows a new image, or no image any more.
+    Artwork {
+        /// Channel number, 0-3. The daemon keeps only channel 0.
+        channel: u8,
+        /// The image, or `None` for a cleared channel.
+        image: Option<ArtworkImage>,
+    },
+    /// The server's colors took effect.
+    Color(ThemeColors),
+    /// The color state was dropped because the color role was removed.
+    ColorCleared,
     /// The server's controller view changed; not authoritative for the TV volume.
     ControllerState,
     /// The server corrected the delay after the audio port.
@@ -239,6 +254,10 @@ impl From<Event> for PlaybackEvent {
                 playback_speed: progress.speed_permille,
             },
             Event::State(_) => Self::ControllerState,
+            Event::TrackCleared => Self::TrackCleared,
+            Event::Artwork { channel, image } => Self::Artwork { channel, image },
+            Event::Color(scheme) => Self::Color(theme_colors(scheme)),
+            Event::ColorCleared => Self::ColorCleared,
             Event::Volume {
                 requested,
                 applied,
@@ -445,6 +464,39 @@ impl App {
                 // the UI can distinguish a seek to the same position (e.g. 0) from a periodic
                 // snapshot.
                 state.metadata_revision = state.metadata_revision.wrapping_add(1);
+                Vec::new()
+            }
+            PlaybackEvent::TrackCleared => {
+                // The metadata role dropped its state. Playback, the stream and the other roles
+                // are untouched; only the revision tells the UI to re-base its now-playing view.
+                let mut state = self.state.write().expect("app state lock poisoned");
+                state.title = None;
+                state.artist = None;
+                state.album = None;
+                state.artwork_url = None;
+                state.progress_ms = None;
+                state.duration_ms = None;
+                state.playback_speed = None;
+                state.metadata_revision = state.metadata_revision.wrapping_add(1);
+                Vec::new()
+            }
+            PlaybackEvent::Artwork { channel, image } => {
+                // The state keeps one artwork channel; another channel is not ours to show.
+                if channel != 0 {
+                    return Vec::new();
+                }
+                let mut state = self.state.write().expect("app state lock poisoned");
+                state.artwork = image.map(Arc::new);
+                // A clear is a change too: the UI must drop the image it is showing.
+                state.artwork_revision = state.artwork_revision.wrapping_add(1);
+                Vec::new()
+            }
+            PlaybackEvent::Color(colors) => {
+                self.state.write().expect("app state lock poisoned").color = Some(colors);
+                Vec::new()
+            }
+            PlaybackEvent::ColorCleared => {
+                self.state.write().expect("app state lock poisoned").color = None;
                 Vec::new()
             }
             // MA's controller view is not authoritative for the TV's actual volume; Luna is.
@@ -972,6 +1024,21 @@ fn none_if_empty(value: String) -> Option<String> {
         None
     } else {
         Some(value)
+    }
+}
+
+/// Flattens the client's color scheme into the state's serializable palette.
+///
+/// `ColorScheme` is non-exhaustive and carries a server timestamp; the daemon only needs the six
+/// colors, and the client has already applied the timestamp before delivering the event.
+fn theme_colors(scheme: ColorScheme) -> ThemeColors {
+    ThemeColors {
+        background_dark: scheme.background_dark,
+        background_light: scheme.background_light,
+        primary: scheme.primary,
+        accent: scheme.accent,
+        on_dark: scheme.on_dark,
+        on_light: scheme.on_light,
     }
 }
 
