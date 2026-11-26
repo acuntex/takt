@@ -57,6 +57,10 @@ daemon-side groundwork.
 | `POST /api/transport` | `play`, `pause`, `next`, `prev`, `seek` (`position_ms`), `seek_relative` (`offset_ms`); PIN required |
 | `POST /api/config`    | `server`, `player_name`, `output_delay_ms`; PIN required                                             |
 
+`GET /api/artwork` derives `Content-Type` from the image it holds (`image/jpeg` for the advertised
+channel, `image/png` if a future configuration asks for it) and answers with
+`Cache-Control: no-store` and `ETag: "<artwork_revision>"`.
+
 If the configured address stops answering, Takt browses `_sendspin-server._tcp` at the next start or
 connection rebuild and uses the first reachable advertised server for that run. The config is never
 rewritten. mDNS does not cross a router: the TV and the server must share one broadcast domain.

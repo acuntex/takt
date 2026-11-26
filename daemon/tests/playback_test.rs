@@ -879,10 +879,30 @@ fn artwork_replaces_and_clears_its_channel_by_revision() {
         channel: 0,
         image: None,
     });
-    let state = app.shared_state();
-    let state = state.read().expect("state lock");
-    assert!(state.artwork.is_none());
-    assert_eq!(state.artwork_revision, 3);
+    {
+        let state = app.shared_state();
+        let state = state.read().expect("state lock");
+        assert!(state.artwork.is_none());
+        assert_eq!(state.artwork_revision, 3);
+    }
+
+    app.handle_event(
+        Event::Artwork {
+            channel: 0,
+            image: Some(first.clone()),
+        }
+        .into(),
+    );
+    {
+        let state = app.shared_state();
+        let state = state.read().expect("state lock");
+        assert_eq!(
+            state.artwork.as_ref().map(|image| image.data.clone()),
+            Some(first.data.clone()),
+            "an image after a clear shows again"
+        );
+        assert_eq!(state.artwork_revision, 4);
+    }
 }
 
 #[test]

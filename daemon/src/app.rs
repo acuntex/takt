@@ -50,8 +50,9 @@ const REQUIRED_LEAD_TIME_MS: u32 = 900;
 
 /// Edge length of the single artwork channel, in pixels.
 ///
-/// The UI draws the album image in a 620 px square card, so 640 px covers the card at a
-/// 1080p layout without asking the server for an image larger than it ever renders.
+/// The UI draws the album image in a 620 px square card, so the 640 px source covers the card
+/// with headroom. The 1500 px ghost is a blurred copy of the same image, so a larger source
+/// buys nothing visible.
 const ARTWORK_CHANNEL_PX: u32 = 640;
 
 /// Largest artwork image the client keeps, in bytes.
