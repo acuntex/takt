@@ -18,8 +18,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, Result};
 use syncspin_client::{
-    next_backoff, ArtworkImage, AudioMode, Client, ClientConfig, ColorScheme, ControlHandle,
-    DeviceInfo, Event, EventStream, StreamEndReason, VolumePolicy,
+    next_backoff, ArtworkChannel, ArtworkImage, ArtworkSource, AudioMode, Client, ClientConfig,
+    ColorScheme, ControlHandle, DeviceInfo, Event, EventStream, ImageFormat, StreamEndReason,
+    VolumePolicy,
 };
 use tokio::sync::mpsc;
 
@@ -46,6 +47,28 @@ const DISCONNECT_ERROR_TIMEOUT: Duration = Duration::from_secs(30);
 /// decoder (measured at 100-300 ms on the TV) plus the 200 ms the frame spends before the port.
 /// A server that honours it waits this long before the first frame is due.
 const REQUIRED_LEAD_TIME_MS: u32 = 900;
+
+/// Edge length of the single artwork channel, in pixels.
+///
+/// The UI draws the album image in a 620 px square card, so 640 px covers the card at a
+/// 1080p layout without asking the server for an image larger than it ever renders.
+const ARTWORK_CHANNEL_PX: u32 = 640;
+
+/// Largest artwork image the client keeps, in bytes.
+///
+/// The UI only needs the 640 px JPEG above; 1 MiB is roomy for it and bounds how much an image
+/// can cost the client's memory on the TV.
+const MAX_ARTWORK_BYTES: usize = 1_048_576;
+
+/// The artwork channels this client asks for: one album image at the card size.
+fn artwork_channels() -> Vec<Option<ArtworkChannel>> {
+    vec![Some(ArtworkChannel {
+        source: ArtworkSource::Album,
+        format: ImageFormat::Jpeg,
+        width: ARTWORK_CHANNEL_PX,
+        height: ARTWORK_CHANNEL_PX,
+    })]
+}
 
 /// Largest upward TV-volume jump Music Assistant may cause in a single command above the guard
 /// threshold. Anything larger is treated as an unsafe event, clamped, and reported back so MA's
@@ -737,6 +760,11 @@ impl App {
             // `set_output_delay`: a server that knows the receiver's chain can correct the group's
             // alignment without anyone walking to the TV. The sink still owns the value.
             client_config.output_delay_control = true;
+            // These two lines advertise the artwork role: a non-empty channel list, one album
+            // image at the card size. The enabled `color` feature advertises the colour role, and
+            // that role has no configuration.
+            client_config.artwork_channels = artwork_channels();
+            client_config.max_artwork_bytes = MAX_ARTWORK_BYTES;
 
             let (client, mut events) = match Client::connect(client_config, Box::new(sink)).await {
                 Ok(connection) => connection,
@@ -1144,5 +1172,16 @@ mod tests {
         assert_eq!(clamp_volume_with(VOLUME_POLICY, 30, 25), 25);
         assert_eq!(clamp_volume_with(VOLUME_POLICY, 90, 50), 50);
         assert_eq!(clamp_volume_with(VOLUME_POLICY, 30, 0), 0);
+    }
+
+    #[test]
+    fn the_artwork_channel_is_one_album_image_at_the_card_size() {
+        let channels = artwork_channels();
+        assert_eq!(channels.len(), 1);
+        let channel = channels[0].expect("channel 0 is configured");
+        assert_eq!(channel.source, ArtworkSource::Album);
+        assert_eq!(channel.format, ImageFormat::Jpeg);
+        assert_eq!((channel.width, channel.height), (640, 640));
+        assert_eq!(MAX_ARTWORK_BYTES, 1_048_576);
     }
 }
