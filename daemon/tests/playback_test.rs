@@ -798,7 +798,7 @@ fn track_cleared_removes_the_metadata_and_keeps_playback_and_artwork() {
     });
     app.handle_event(track("Song", "Artist", Some(1_000)));
 
-    app.handle_event(PlaybackEvent::TrackCleared);
+    app.handle_event(Event::TrackCleared.into());
 
     let state = app.shared_state();
     let state = state.read().expect("state lock");
@@ -829,10 +829,13 @@ fn artwork_replaces_and_clears_its_channel_by_revision() {
         data: vec![0xff, 0xd8, 0x02],
     };
 
-    app.handle_event(PlaybackEvent::Artwork {
-        channel: 0,
-        image: Some(first.clone()),
-    });
+    app.handle_event(
+        Event::Artwork {
+            channel: 0,
+            image: Some(first.clone()),
+        }
+        .into(),
+    );
     {
         let state = app.shared_state();
         let state = state.read().expect("state lock");
@@ -848,14 +851,16 @@ fn artwork_replaces_and_clears_its_channel_by_revision() {
         channel: 1,
         image: Some(second.clone()),
     });
-    assert_eq!(
-        app.shared_state()
-            .read()
-            .expect("state lock")
-            .artwork_revision,
-        1,
-        "a channel we did not advertise is ignored"
-    );
+    {
+        let state = app.shared_state();
+        let state = state.read().expect("state lock");
+        assert_eq!(
+            state.artwork.as_ref().map(|image| image.data.clone()),
+            Some(first.data.clone()),
+            "a channel we did not advertise changes neither the image nor the revision"
+        );
+        assert_eq!(state.artwork_revision, 1);
+    }
 
     app.handle_event(PlaybackEvent::Artwork {
         channel: 0,
