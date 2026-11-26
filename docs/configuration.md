@@ -42,10 +42,16 @@ role automatically, approve the client key once in the MA interface.
 
 ## HTTP API
 
+The daemon advertises two optional server roles: `artwork@v1`, with one 640×640 album channel (JPEG,
+1 MiB limit), and `color@v1`, with the palette the server derives from the audio. The TV UI does not
+render either yet: the artwork endpoint and the `artwork_revision` and `color` status fields are
+daemon-side groundwork.
+
 | Endpoint              | Purpose                                                                                              |
 | --------------------- | ---------------------------------------------------------------------------------------------------- |
-| `GET /api/status`     | Playback state, metadata, volume, server, output delay                                               |
+| `GET /api/status`     | Playback state, metadata, volume, server, output delay, artwork revision, color palette              |
 | `GET /events`         | Server-sent events with the same state                                                               |
+| `GET /api/artwork`    | Latest album image from the artwork role (`image/jpeg`); 404 JSON until one arrives; no PIN          |
 | `GET /api/foreground` | The TV's foreground app and whether it means "left"                                                  |
 | `GET /api/pin`        | The boot PIN; loopback only                                                                          |
 | `POST /api/transport` | `play`, `pause`, `next`, `prev`, `seek` (`position_ms`), `seek_relative` (`offset_ms`); PIN required |
