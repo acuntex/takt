@@ -30,7 +30,7 @@ use anyhow::{anyhow, Result};
 use app::{Action, App, PlaybackEvent, TvControl};
 use config::Config;
 use state::PlaybackState;
-use syncspin_client::StreamEndReason;
+use syncspin_client::{Event, StreamEndReason, TrackProgress};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum TvCall {
@@ -738,6 +738,34 @@ fn the_track_event_forwards_the_reported_playback_speed() {
             .playback_speed,
         Some(500)
     );
+}
+
+#[test]
+fn the_track_event_maps_progress_into_the_daemon_view() {
+    let (mut app, _tv) = test_app();
+    let mut progress = TrackProgress::default();
+    progress.position_ms = Some(120_000);
+    progress.duration_ms = Some(355_000);
+    progress.speed_permille = 500;
+    let event = Event::Track {
+        title: "Half speed".to_owned(),
+        artist: "Artist".to_owned(),
+        album: "Album".to_owned(),
+        album_artist: String::new(),
+        artwork_url: String::new(),
+        year: None,
+        track: None,
+        timestamp_us: 0,
+        progress,
+    };
+
+    app.handle_event(event.into());
+
+    let state = app.shared_state();
+    let state = state.read().expect("state lock");
+    assert_eq!(state.progress_ms, Some(120_000));
+    assert_eq!(state.duration_ms, Some(355_000));
+    assert_eq!(state.playback_speed, Some(500));
 }
 
 #[test]

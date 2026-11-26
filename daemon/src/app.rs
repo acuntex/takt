@@ -227,18 +227,16 @@ impl From<Event> for PlaybackEvent {
                 artist,
                 album,
                 artwork_url,
-                progress_ms,
-                duration_ms,
-                playback_speed,
+                progress,
                 ..
             } => Self::Track {
                 title,
                 artist,
                 album,
                 artwork_url,
-                progress_ms,
-                duration_ms,
-                playback_speed,
+                progress_ms: progress.position_ms,
+                duration_ms: progress.duration_ms,
+                playback_speed: progress.speed_permille,
             },
             Event::State(_) => Self::ControllerState,
             Event::Volume {
