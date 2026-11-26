@@ -42,9 +42,9 @@ role automatically, approve the client key once in the MA interface.
 
 ## HTTP API
 
-The daemon advertises two optional server roles: `artwork@v1`, with one 640×640 album channel (JPEG,
-1 MiB limit), and `color@v1`, with the palette the server derives from the audio. The TV UI does not
-render either yet: the artwork endpoint and the `artwork_revision` and `color` status fields are
+The daemon advertises two optional roles: `artwork@v1`, with one 640×640 album channel (JPEG, 1 MiB
+limit), and `color@v1`, with the six-field palette the server supplies for the track. The TV UI does
+not render either yet: the artwork endpoint and the `artwork_revision` and `color` status fields are
 daemon-side groundwork.
 
 | Endpoint              | Purpose                                                                                              |
