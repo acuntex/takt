@@ -244,8 +244,9 @@ async fn status(State(state): State<HttpState>) -> Json<AppState> {
 /// The latest artwork image exactly as the server delivered it.
 ///
 /// The bytes are kept out of the status JSON; the UI reloads this endpoint when
-/// `artwork_revision` changes and uses the ETag to tell one image from the next. The image is
-/// copied out of the shared state under a short read lock and sent after the lock is dropped.
+/// `artwork_revision` changes and uses the ETag to tell one image from the next. The `Arc` is
+/// cloned out of the shared state under a short read lock, and the bytes are copied only after
+/// that lock is dropped, so serving an image never holds the state lock.
 async fn artwork(State(state): State<HttpState>) -> Response {
     let (image, revision) = {
         let app_state = state.app_state.read().expect("app state lock poisoned");

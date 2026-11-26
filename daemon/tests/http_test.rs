@@ -227,6 +227,8 @@ async fn artwork_is_not_found_until_one_arrives() {
     let fixture = fixture();
     let response = send(&fixture.router, request("GET", "/api/artwork", None)).await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(response.headers()[header::CONTENT_TYPE], "application/json");
+    assert_eq!(json_body(response).await, json!({"error": "no artwork"}));
 }
 
 #[tokio::test]
@@ -867,6 +869,14 @@ async fn app_js_and_style_css_are_served_with_the_expected_content_types() {
 #[tokio::test]
 async fn events_is_sse_and_emits_a_status_event_immediately() {
     let fixture = fixture();
+    {
+        let mut state = fixture.shared_state.write().expect("state lock");
+        state.artwork_revision = 2;
+        state.color = Some(ThemeColors {
+            primary: Some([1, 2, 3]),
+            ..Default::default()
+        });
+    }
 
     let response = send(&fixture.router, request("GET", "/events", None)).await;
 
@@ -890,6 +900,12 @@ async fn events_is_sse_and_emits_a_status_event_immediately() {
     assert_eq!(status["state"], "playing");
     assert_eq!(status["title"], "Test Track");
     assert_eq!(status["volume"], 42);
+    assert_eq!(status["artwork_revision"], 2);
+    assert_eq!(status["color"]["primary"], json!([1, 2, 3]));
+    assert!(
+        status.get("artwork").is_none(),
+        "image bytes never enter the SSE status frame"
+    );
 }
 
 #[tokio::test]
