@@ -18,8 +18,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, Result};
 use syncspin_client::{
-    next_backoff, AudioMode, Client, ClientConfig, ControlHandle, DeviceInfo, Event, EventStream,
-    StreamEndReason, VolumePolicy,
+    next_backoff, ArtworkChannel, ArtworkImage, ArtworkSource, AudioMode, Client, ClientConfig,
+    ColorScheme, ControlHandle, DeviceInfo, Event, EventStream, ImageFormat, StreamEndReason,
+    VolumePolicy,
 };
 use tokio::sync::mpsc;
 
@@ -27,7 +28,7 @@ use crate::config::Config;
 use crate::discovery::ServerFinder;
 use crate::foreground::{arm_grace, GraceUntil};
 use crate::sink::gst::{GstSink, GstSinkHandle, SharedOutputDelay};
-use crate::state::{AppState, PlaybackState, SharedAppState};
+use crate::state::{AppState, PlaybackState, SharedAppState, ThemeColors};
 use crate::visual::SharedAudioVisual;
 
 /// Upper bound for the client's reconnect delay: the sequence is 1, 2, 4 … 16, 30 seconds.
@@ -46,6 +47,29 @@ const DISCONNECT_ERROR_TIMEOUT: Duration = Duration::from_secs(30);
 /// decoder (measured at 100-300 ms on the TV) plus the 200 ms the frame spends before the port.
 /// A server that honours it waits this long before the first frame is due.
 const REQUIRED_LEAD_TIME_MS: u32 = 900;
+
+/// Edge length of the single artwork channel, in pixels.
+///
+/// The UI draws the album image in a 620 px square card, so the 640 px source covers the card
+/// with headroom. The 1500 px ghost is a blurred copy of the same image, so a larger source
+/// buys nothing visible.
+const ARTWORK_CHANNEL_PX: u32 = 640;
+
+/// Largest artwork image the client keeps, in bytes.
+///
+/// The UI only needs the 640 px JPEG above; 1 MiB is roomy for it and bounds how much an image
+/// can cost the client's memory on the TV.
+const MAX_ARTWORK_BYTES: usize = 1_048_576;
+
+/// The artwork channels this client asks for: one album image at the card size.
+fn artwork_channels() -> Vec<Option<ArtworkChannel>> {
+    vec![Some(ArtworkChannel {
+        source: ArtworkSource::Album,
+        format: ImageFormat::Jpeg,
+        width: ARTWORK_CHANNEL_PX,
+        height: ARTWORK_CHANNEL_PX,
+    })]
+}
 
 /// Largest upward TV-volume jump Music Assistant may cause in a single command above the guard
 /// threshold. Anything larger is treated as an unsafe event, clamped, and reported back so MA's
@@ -179,6 +203,21 @@ pub enum PlaybackEvent {
         /// Playback speed per mille; `1000` is normal speed.
         playback_speed: u32,
     },
+    /// The server cleared the now-playing metadata while playback continues.
+    ///
+    /// The metadata role owns these seven fields; artwork and color keep their own lifecycles.
+    TrackCleared,
+    /// An artwork channel shows a new image, or no image any more.
+    Artwork {
+        /// Channel number, 0-3. The daemon keeps only channel 0.
+        channel: u8,
+        /// The image, or `None` for a cleared channel.
+        image: Option<ArtworkImage>,
+    },
+    /// The server's colors took effect.
+    Color(ThemeColors),
+    /// The color state was dropped because the color role was removed.
+    ColorCleared,
     /// The server's controller view changed; not authoritative for the TV volume.
     ControllerState,
     /// The server corrected the delay after the audio port.
@@ -227,20 +266,22 @@ impl From<Event> for PlaybackEvent {
                 artist,
                 album,
                 artwork_url,
-                progress_ms,
-                duration_ms,
-                playback_speed,
+                progress,
                 ..
             } => Self::Track {
                 title,
                 artist,
                 album,
                 artwork_url,
-                progress_ms,
-                duration_ms,
-                playback_speed,
+                progress_ms: progress.position_ms,
+                duration_ms: progress.duration_ms,
+                playback_speed: progress.speed_permille,
             },
             Event::State(_) => Self::ControllerState,
+            Event::TrackCleared => Self::TrackCleared,
+            Event::Artwork { channel, image } => Self::Artwork { channel, image },
+            Event::Color(scheme) => Self::Color(theme_colors(scheme)),
+            Event::ColorCleared => Self::ColorCleared,
             Event::Volume {
                 requested,
                 applied,
@@ -447,6 +488,39 @@ impl App {
                 // the UI can distinguish a seek to the same position (e.g. 0) from a periodic
                 // snapshot.
                 state.metadata_revision = state.metadata_revision.wrapping_add(1);
+                Vec::new()
+            }
+            PlaybackEvent::TrackCleared => {
+                // The metadata role dropped its state. Playback, the stream and the other roles
+                // are untouched; only the revision tells the UI to re-base its now-playing view.
+                let mut state = self.state.write().expect("app state lock poisoned");
+                state.title = None;
+                state.artist = None;
+                state.album = None;
+                state.artwork_url = None;
+                state.progress_ms = None;
+                state.duration_ms = None;
+                state.playback_speed = None;
+                state.metadata_revision = state.metadata_revision.wrapping_add(1);
+                Vec::new()
+            }
+            PlaybackEvent::Artwork { channel, image } => {
+                // The state keeps one artwork channel; another channel is not ours to show.
+                if channel != 0 {
+                    return Vec::new();
+                }
+                let mut state = self.state.write().expect("app state lock poisoned");
+                state.artwork = image.map(Arc::new);
+                // A clear is a change too: the UI must drop the image it is showing.
+                state.artwork_revision = state.artwork_revision.wrapping_add(1);
+                Vec::new()
+            }
+            PlaybackEvent::Color(colors) => {
+                self.state.write().expect("app state lock poisoned").color = Some(colors);
+                Vec::new()
+            }
+            PlaybackEvent::ColorCleared => {
+                self.state.write().expect("app state lock poisoned").color = None;
                 Vec::new()
             }
             // MA's controller view is not authoritative for the TV's actual volume; Luna is.
@@ -687,6 +761,11 @@ impl App {
             // `set_output_delay`: a server that knows the receiver's chain can correct the group's
             // alignment without anyone walking to the TV. The sink still owns the value.
             client_config.output_delay_control = true;
+            // These two lines advertise the artwork role: a non-empty channel list, one album
+            // image at the card size. The enabled `color` feature advertises the colour role, and
+            // that role has no configuration.
+            client_config.artwork_channels = artwork_channels();
+            client_config.max_artwork_bytes = MAX_ARTWORK_BYTES;
 
             let (client, mut events) = match Client::connect(client_config, Box::new(sink)).await {
                 Ok(connection) => connection,
@@ -977,6 +1056,21 @@ fn none_if_empty(value: String) -> Option<String> {
     }
 }
 
+/// Flattens the client's color scheme into the state's serializable palette.
+///
+/// `ColorScheme` is non-exhaustive and carries a server timestamp; the daemon only needs the six
+/// colors, and the client has already applied the timestamp before delivering the event.
+fn theme_colors(scheme: ColorScheme) -> ThemeColors {
+    ThemeColors {
+        background_dark: scheme.background_dark,
+        background_light: scheme.background_light,
+        primary: scheme.primary,
+        accent: scheme.accent,
+        on_dark: scheme.on_dark,
+        on_light: scheme.on_light,
+    }
+}
+
 /// Wall-clock milliseconds since the Unix epoch, for correlating daemon log lines with MA and
 /// `pactl` observation on the TV.
 fn unix_millis() -> u128 {
@@ -1079,5 +1173,16 @@ mod tests {
         assert_eq!(clamp_volume_with(VOLUME_POLICY, 30, 25), 25);
         assert_eq!(clamp_volume_with(VOLUME_POLICY, 90, 50), 50);
         assert_eq!(clamp_volume_with(VOLUME_POLICY, 30, 0), 0);
+    }
+
+    #[test]
+    fn the_artwork_channel_is_one_album_image_at_the_card_size() {
+        let channels = artwork_channels();
+        assert_eq!(channels.len(), 1);
+        let channel = channels[0].expect("channel 0 is configured");
+        assert_eq!(channel.source, ArtworkSource::Album);
+        assert_eq!(channel.format, ImageFormat::Jpeg);
+        assert_eq!((channel.width, channel.height), (640, 640));
+        assert_eq!(MAX_ARTWORK_BYTES, 1_048_576);
     }
 }

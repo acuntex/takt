@@ -16,6 +16,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
+use axum::body::Body;
 use axum::extract::rejection::JsonRejection;
 use axum::extract::{ConnectInfo, Request, State};
 use axum::http::{header, StatusCode};
@@ -25,6 +26,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::json;
+use syncspin_client::ImageFormat;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::time::MissedTickBehavior;
@@ -145,6 +147,7 @@ pub fn router(state: HttpState) -> Router {
         .route("/fonts/anton.ttf", get(anton_ttf))
         .route("/ping.png", get(ping_png))
         .route("/api/status", get(status))
+        .route("/api/artwork", get(artwork))
         .route("/api/foreground", get(foreground_app))
         .route("/api/pin", get(pin))
         .route("/api/transport", post(transport))
@@ -236,6 +239,39 @@ async fn anton_ttf() -> Response {
 
 async fn status(State(state): State<HttpState>) -> Json<AppState> {
     Json(snapshot(&state.app_state))
+}
+
+/// The latest artwork image exactly as the server delivered it.
+///
+/// The bytes are kept out of the status JSON; the UI reloads this endpoint when
+/// `artwork_revision` changes and uses the ETag to tell one image from the next. The `Arc` is
+/// cloned out of the shared state under a short read lock, and the bytes are copied only after
+/// that lock is dropped, so serving an image never holds the state lock.
+async fn artwork(State(state): State<HttpState>) -> Response {
+    let (image, revision) = {
+        let app_state = state.app_state.read().expect("app state lock poisoned");
+        (app_state.artwork.clone(), app_state.artwork_revision)
+    };
+    let Some(image) = image else {
+        return error_response(StatusCode::NOT_FOUND, "no artwork");
+    };
+    let content_type = match image.format {
+        ImageFormat::Jpeg => "image/jpeg",
+        ImageFormat::Png => "image/png",
+    };
+    let etag = format!("\"{revision}\"")
+        .parse()
+        .expect("an artwork revision is a valid ETag");
+    let mut response = (
+        [
+            (header::CONTENT_TYPE, content_type),
+            (header::CACHE_CONTROL, "no-store"),
+        ],
+        Body::from(image.data.clone()),
+    )
+        .into_response();
+    response.headers_mut().insert(header::ETAG, etag);
+    response
 }
 
 async fn pin(State(state): State<HttpState>, request: Request) -> Response {

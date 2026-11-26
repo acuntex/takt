@@ -29,8 +29,10 @@ use std::time::Duration;
 use anyhow::{anyhow, Result};
 use app::{Action, App, PlaybackEvent, TvControl};
 use config::Config;
-use state::PlaybackState;
-use syncspin_client::StreamEndReason;
+use state::{PlaybackState, ThemeColors};
+use syncspin_client::{
+    ArtworkImage, ColorScheme, Event, ImageFormat, StreamEndReason, TrackProgress,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum TvCall {
@@ -741,6 +743,34 @@ fn the_track_event_forwards_the_reported_playback_speed() {
 }
 
 #[test]
+fn the_track_event_maps_progress_into_the_daemon_view() {
+    let (mut app, _tv) = test_app();
+    let mut progress = TrackProgress::default();
+    progress.position_ms = Some(120_000);
+    progress.duration_ms = Some(355_000);
+    progress.speed_permille = 500;
+    let event = Event::Track {
+        title: "Half speed".to_owned(),
+        artist: "Artist".to_owned(),
+        album: "Album".to_owned(),
+        album_artist: String::new(),
+        artwork_url: String::new(),
+        year: None,
+        track: None,
+        timestamp_us: 0,
+        progress,
+    };
+
+    app.handle_event(event.into());
+
+    let state = app.shared_state();
+    let state = state.read().expect("state lock");
+    assert_eq!(state.progress_ms, Some(120_000));
+    assert_eq!(state.duration_ms, Some(355_000));
+    assert_eq!(state.playback_speed, Some(500));
+}
+
+#[test]
 fn metadata_event_increments_the_revision_even_when_progress_is_unchanged() {
     let (mut app, _tv) = test_app();
 
@@ -753,6 +783,151 @@ fn metadata_event_increments_the_revision_even_when_progress_is_unchanged() {
     let second = app.shared_state().read().expect("state lock").clone();
     assert_eq!(second.metadata_revision, 2);
     assert_eq!(second.progress_ms, Some(0));
+}
+
+#[test]
+fn track_cleared_removes_the_metadata_and_keeps_playback_and_artwork() {
+    let (mut app, _tv) = test_app();
+    start_playback(&mut app);
+    app.handle_event(PlaybackEvent::Artwork {
+        channel: 0,
+        image: Some(ArtworkImage {
+            format: ImageFormat::Jpeg,
+            data: vec![0xff, 0xd8],
+        }),
+    });
+    app.handle_event(track("Song", "Artist", Some(1_000)));
+
+    app.handle_event(Event::TrackCleared.into());
+
+    let state = app.shared_state();
+    let state = state.read().expect("state lock");
+    assert_eq!(state.title, None);
+    assert_eq!(state.artist, None);
+    assert_eq!(state.album, None);
+    assert_eq!(state.artwork_url, None);
+    assert_eq!(state.progress_ms, None);
+    assert_eq!(state.duration_ms, None);
+    assert_eq!(state.playback_speed, None);
+    assert_eq!(state.metadata_revision, 2);
+    assert_eq!(state.state, PlaybackState::Playing);
+    assert!(
+        state.artwork.is_some(),
+        "the artwork role has its own lifecycle"
+    );
+}
+
+#[test]
+fn artwork_replaces_and_clears_its_channel_by_revision() {
+    let (mut app, _tv) = test_app();
+    let first = ArtworkImage {
+        format: ImageFormat::Jpeg,
+        data: vec![0xff, 0xd8, 0x01],
+    };
+    let second = ArtworkImage {
+        format: ImageFormat::Jpeg,
+        data: vec![0xff, 0xd8, 0x02],
+    };
+
+    app.handle_event(
+        Event::Artwork {
+            channel: 0,
+            image: Some(first.clone()),
+        }
+        .into(),
+    );
+    {
+        let state = app.shared_state();
+        let state = state.read().expect("state lock");
+        assert_eq!(
+            state.artwork.as_ref().map(|image| image.data.clone()),
+            Some(first.data.clone())
+        );
+        assert_eq!(state.artwork_revision, 1);
+        assert_eq!(state.title, None, "artwork does not require metadata");
+    }
+
+    app.handle_event(PlaybackEvent::Artwork {
+        channel: 1,
+        image: Some(second.clone()),
+    });
+    {
+        let state = app.shared_state();
+        let state = state.read().expect("state lock");
+        assert_eq!(
+            state.artwork.as_ref().map(|image| image.data.clone()),
+            Some(first.data.clone()),
+            "a channel we did not advertise changes neither the image nor the revision"
+        );
+        assert_eq!(state.artwork_revision, 1);
+    }
+
+    app.handle_event(PlaybackEvent::Artwork {
+        channel: 0,
+        image: Some(second.clone()),
+    });
+    {
+        let state = app.shared_state();
+        let state = state.read().expect("state lock");
+        assert_eq!(
+            state.artwork.as_ref().map(|image| image.data.clone()),
+            Some(second.data.clone())
+        );
+        assert_eq!(state.artwork_revision, 2);
+    }
+    app.handle_event(PlaybackEvent::Artwork {
+        channel: 0,
+        image: None,
+    });
+    {
+        let state = app.shared_state();
+        let state = state.read().expect("state lock");
+        assert!(state.artwork.is_none());
+        assert_eq!(state.artwork_revision, 3);
+    }
+
+    app.handle_event(
+        Event::Artwork {
+            channel: 0,
+            image: Some(first.clone()),
+        }
+        .into(),
+    );
+    {
+        let state = app.shared_state();
+        let state = state.read().expect("state lock");
+        assert_eq!(
+            state.artwork.as_ref().map(|image| image.data.clone()),
+            Some(first.data.clone()),
+            "an image after a clear shows again"
+        );
+        assert_eq!(state.artwork_revision, 4);
+    }
+}
+
+#[test]
+fn color_events_store_and_clear_the_palette() {
+    let (mut app, _tv) = test_app();
+    let mut scheme = ColorScheme::default();
+    scheme.primary = Some([1, 2, 3]);
+    scheme.accent = Some([4, 5, 6]);
+
+    app.handle_event(Event::Color(scheme).into());
+
+    let state = app.shared_state();
+    let state = state.read().expect("state lock");
+    assert_eq!(
+        state.color,
+        Some(ThemeColors {
+            primary: Some([1, 2, 3]),
+            accent: Some([4, 5, 6]),
+            ..ThemeColors::default()
+        })
+    );
+    drop(state);
+
+    app.handle_event(Event::ColorCleared.into());
+    assert_eq!(app.shared_state().read().expect("state lock").color, None);
 }
 
 #[tokio::test]

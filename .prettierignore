@@ -4,3 +4,4 @@ dist/
 *.ipk
 *.tar.gz
 .work/
+.serena/

@@ -35,7 +35,8 @@ use futures_util::StreamExt;
 use http::{router, HttpState, PinStore};
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
-use state::{AppState, PlaybackState, SharedAppState};
+use state::{AppState, PlaybackState, SharedAppState, ThemeColors};
+use syncspin_client::{ArtworkImage, ImageFormat};
 use tokio::sync::mpsc::UnboundedReceiver;
 use tower::ServiceExt;
 use visual::{AudioVisual, SharedAudioVisual, VisualLevels};
@@ -184,11 +185,15 @@ async fn ping_answers_with_a_png_for_the_channel_wrapper() {
 #[tokio::test]
 async fn status_returns_playback_fields_from_shared_state() {
     let fixture = fixture();
-    fixture
-        .shared_state
-        .write()
-        .expect("state lock")
-        .output_delay_ms = 130;
+    {
+        let mut state = fixture.shared_state.write().expect("state lock");
+        state.output_delay_ms = 130;
+        state.artwork_revision = 2;
+        state.color = Some(ThemeColors {
+            primary: Some([1, 2, 3]),
+            ..Default::default()
+        });
+    }
 
     let response = send(&fixture.router, request("GET", "/api/status", None)).await;
 
@@ -205,10 +210,112 @@ async fn status_returns_playback_fields_from_shared_state() {
     assert_eq!(body["volume"], 42);
     assert_eq!(body["muted"], true);
     assert_eq!(body["output_delay_ms"], 130);
+    assert_eq!(body["artwork_revision"], 2);
+    assert_eq!(body["color"]["primary"], json!([1, 2, 3]));
+    assert!(
+        body.get("artwork").is_none(),
+        "image bytes never enter the status JSON"
+    );
     assert!(body.get("server").is_some());
     assert!(body.get("player_name").is_some());
     assert!(body.get("pin").is_none());
     assert!(body.get("client_id").is_none());
+}
+
+#[tokio::test]
+async fn artwork_is_not_found_until_one_arrives() {
+    let fixture = fixture();
+    let response = send(&fixture.router, request("GET", "/api/artwork", None)).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(response.headers()[header::CONTENT_TYPE], "application/json");
+    assert_eq!(json_body(response).await, json!({"error": "no artwork"}));
+}
+
+#[tokio::test]
+async fn artwork_is_served_with_its_type_revision_and_no_store() {
+    let fixture = fixture();
+    let bytes = vec![0xff, 0xd8, 0xff, 0xe0, 0x01];
+    {
+        let mut state = fixture.shared_state.write().expect("state lock");
+        state.artwork = Some(Arc::new(ArtworkImage {
+            format: ImageFormat::Jpeg,
+            data: bytes.clone(),
+        }));
+        state.artwork_revision = 7;
+    }
+
+    let response = send(&fixture.router, request("GET", "/api/artwork", None)).await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()[header::CONTENT_TYPE], "image/jpeg");
+    assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+    assert_eq!(response.headers()[header::ETAG], "\"7\"");
+    let body = response
+        .into_body()
+        .collect()
+        .await
+        .expect("body")
+        .to_bytes();
+    assert_eq!(body.as_ref(), bytes.as_slice());
+}
+
+#[tokio::test]
+async fn artwork_content_type_follows_the_format() {
+    let fixture = fixture();
+    {
+        let mut state = fixture.shared_state.write().expect("state lock");
+        state.artwork = Some(Arc::new(ArtworkImage {
+            format: ImageFormat::Png,
+            data: vec![0x89, b'P', b'N', b'G'],
+        }));
+        state.artwork_revision = 1;
+    }
+
+    let response = send(&fixture.router, request("GET", "/api/artwork", None)).await;
+
+    assert_eq!(response.headers()[header::CONTENT_TYPE], "image/png");
+}
+
+#[tokio::test]
+async fn a_replacement_is_visible_with_its_new_revision() {
+    let fixture = fixture();
+    let first = vec![0xff, 0xd8, 0x01];
+    let second = vec![0xff, 0xd8, 0x02];
+    {
+        let mut state = fixture.shared_state.write().expect("state lock");
+        state.artwork = Some(Arc::new(ArtworkImage {
+            format: ImageFormat::Jpeg,
+            data: first.clone(),
+        }));
+        state.artwork_revision = 7;
+    }
+    let response = send(&fixture.router, request("GET", "/api/artwork", None)).await;
+    assert_eq!(response.headers()[header::ETAG], "\"7\"");
+    let body = response
+        .into_body()
+        .collect()
+        .await
+        .expect("body")
+        .to_bytes();
+    assert_eq!(body.as_ref(), first.as_slice());
+
+    {
+        let mut state = fixture.shared_state.write().expect("state lock");
+        state.artwork = Some(Arc::new(ArtworkImage {
+            format: ImageFormat::Jpeg,
+            data: second.clone(),
+        }));
+        state.artwork_revision = 8;
+    }
+    let response = send(&fixture.router, request("GET", "/api/artwork", None)).await;
+    assert_eq!(response.headers()[header::ETAG], "\"8\"");
+    let body = response
+        .into_body()
+        .collect()
+        .await
+        .expect("body")
+        .to_bytes();
+    assert_eq!(body.as_ref(), second.as_slice());
 }
 
 #[tokio::test]
@@ -762,6 +869,14 @@ async fn app_js_and_style_css_are_served_with_the_expected_content_types() {
 #[tokio::test]
 async fn events_is_sse_and_emits_a_status_event_immediately() {
     let fixture = fixture();
+    {
+        let mut state = fixture.shared_state.write().expect("state lock");
+        state.artwork_revision = 2;
+        state.color = Some(ThemeColors {
+            primary: Some([1, 2, 3]),
+            ..Default::default()
+        });
+    }
 
     let response = send(&fixture.router, request("GET", "/events", None)).await;
 
@@ -785,6 +900,12 @@ async fn events_is_sse_and_emits_a_status_event_immediately() {
     assert_eq!(status["state"], "playing");
     assert_eq!(status["title"], "Test Track");
     assert_eq!(status["volume"], 42);
+    assert_eq!(status["artwork_revision"], 2);
+    assert_eq!(status["color"]["primary"], json!([1, 2, 3]));
+    assert!(
+        status.get("artwork").is_none(),
+        "image bytes never enter the SSE status frame"
+    );
 }
 
 #[tokio::test]

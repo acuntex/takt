@@ -21,5 +21,7 @@ node_modules/
 
 # Working notes (designs, plans, ledgers) - never commit
 .work/
+# Local code-index scratch (the same reason as .work/)
+.serena/
 # Lokale Agenten-Konfiguration (enthaelt Host- und Token-Pfade)
 /opencode.jsonc

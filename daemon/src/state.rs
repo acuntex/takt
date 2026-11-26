@@ -7,8 +7,29 @@
 use std::sync::{Arc, RwLock};
 
 use serde::{Deserialize, Serialize};
+use syncspin_client::ArtworkImage;
 
 use crate::config::Config;
+
+/// The colors the server derived from the audio, as `[R, G, B]` triples.
+///
+/// A color the server did not send is `None`. The field names match the wire; the palette is
+/// already flattened, so the timestamp and the role lifecycle stay with the client.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+pub struct ThemeColors {
+    /// Background for dark mode.
+    pub background_dark: Option<[u8; 3]>,
+    /// Background for light mode.
+    pub background_light: Option<[u8; 3]>,
+    /// The dominant color.
+    pub primary: Option<[u8; 3]>,
+    /// A secondary or complementary color.
+    pub accent: Option<[u8; 3]>,
+    /// A light color for use on dark backgrounds.
+    pub on_dark: Option<[u8; 3]>,
+    /// A dark color for use on light backgrounds.
+    pub on_light: Option<[u8; 3]>,
+}
 
 /// High-level daemon/playback lifecycle exposed to the UI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -30,6 +51,18 @@ pub struct AppState {
     /// Album title, when the server reports one. Shown as the stage's album chip.
     pub album: Option<String>,
     pub artwork_url: Option<String>,
+    /// The most recent artwork image the server delivered on channel 0.
+    ///
+    /// Skipped in the JSON state: the encoded bytes are served by `GET /api/artwork`, and the
+    /// status document only carries [`Self::artwork_revision`]. The image has its own lifecycle,
+    /// independent of the metadata role, so a cleared track does not clear it.
+    #[serde(skip)]
+    pub artwork: Option<Arc<ArtworkImage>>,
+    /// Monotonically increasing revision of artwork changes. Bumped for both a new image and a
+    /// cleared channel, so the UI can reload the artwork it is showing.
+    pub artwork_revision: u64,
+    /// The server's color palette, when it sent one.
+    pub color: Option<ThemeColors>,
     /// Track position in milliseconds at the time of the last metadata update.
     pub progress_ms: Option<u64>,
     /// Track duration in milliseconds, when reported by the server.
@@ -68,6 +101,9 @@ impl AppState {
             artist: None,
             album: None,
             artwork_url: None,
+            artwork: None,
+            artwork_revision: 0,
+            color: None,
             progress_ms: None,
             duration_ms: None,
             playback_speed: None,

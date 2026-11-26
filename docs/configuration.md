@@ -42,14 +42,24 @@ role automatically, approve the client key once in the MA interface.
 
 ## HTTP API
 
+The daemon advertises two optional roles: `artwork@v1`, with one 640×640 album channel (JPEG, 1 MiB
+limit), and `color@v1`, with the six-field palette the server supplies for the track. The TV UI does
+not render either yet: the artwork endpoint and the `artwork_revision` and `color` status fields are
+daemon-side groundwork.
+
 | Endpoint              | Purpose                                                                                              |
 | --------------------- | ---------------------------------------------------------------------------------------------------- |
-| `GET /api/status`     | Playback state, metadata, volume, server, output delay                                               |
+| `GET /api/status`     | Playback state, metadata, volume, server, output delay, artwork revision, color palette              |
 | `GET /events`         | Server-sent events with the same state                                                               |
+| `GET /api/artwork`    | Latest album image from the artwork role (`image/jpeg`); 404 JSON until one arrives; no PIN          |
 | `GET /api/foreground` | The TV's foreground app and whether it means "left"                                                  |
 | `GET /api/pin`        | The boot PIN; loopback only                                                                          |
 | `POST /api/transport` | `play`, `pause`, `next`, `prev`, `seek` (`position_ms`), `seek_relative` (`offset_ms`); PIN required |
 | `POST /api/config`    | `server`, `player_name`, `output_delay_ms`; PIN required                                             |
+
+`GET /api/artwork` derives `Content-Type` from the image it holds (`image/jpeg` for the advertised
+channel, `image/png` if a future configuration asks for it) and answers with
+`Cache-Control: no-store` and `ETag: "<artwork_revision>"`.
 
 If the configured address stops answering, Takt browses `_sendspin-server._tcp` at the next start or
 connection rebuild and uses the first reachable advertised server for that run. The config is never
